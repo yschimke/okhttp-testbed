@@ -1,0 +1,53 @@
+name: containers
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  schedule:
+    # Daily, so a break in a container image or in a published OkHttp shows up
+    # without anyone pushing to this repo.
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+    inputs:
+      okhttpVersion:
+        description: 'OkHttp version under test (e.g. 5.4.0, 5.5.0-SNAPSHOT)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false -Dkotlin.incremental=false"
+
+jobs:
+  containers:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Configure JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run Container Tests
+        run: >
+          ./gradlew containers:test
+          ${{ inputs.okhttpVersion && format('-PokhttpVersion={0}', inputs.okhttpVersion) || '' }}
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-test-results
+          path: containers/build/test-results/test/*.xml
+          retention-days: 30
