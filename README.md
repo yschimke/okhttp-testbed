@@ -48,8 +48,12 @@ Running locally
 Requires Docker and JDK 21+.
 
 ```
-./gradlew containers:test
+./gradlew containers:test containers:loomTest
 ```
+
+`test` covers the container suites and fails the build. `loomTest` runs `BasicLoomTest`
+separately with `ignoreFailures`, because that suite reports on OkHttp rather than on this
+repository — see [Suites that report rather than gate](#suites-that-report-rather-than-gate).
 
 By default this tests the OkHttp version pinned in `gradle/libs.versions.toml`. To test
 another release, a release candidate, or a snapshot:
@@ -67,8 +71,35 @@ The `containers` workflow runs on push, on pull requests, and daily. The daily r
 point: it catches breakage that arrives from outside this repository — a container image
 that moved, a proxy that changed behaviour, a regression in a published OkHttp.
 
-JUnit XML results are uploaded as artifacts on every run, which is what the status page
-will be built from.
+JUnit XML results are uploaded as artifacts on every run — from both `test` and `loomTest`
+— which is what the status page will be built from. The job runs with `--continue` so one
+failing suite doesn't rob the others of a result.
+
+Suites that report rather than gate
+-----------------------------------
+
+Some tests here assert something about OkHttp that is currently false. That is a finding,
+not a broken test, and it shouldn't read as this repository being red — so those suites run
+under `ignoreFailures`: the assertion stays exactly as written, the failure lands in the
+JUnit XML for the status page, and the build stays green.
+
+Only `loomTest` is in this category today. `BasicLoomTest.testHttpsRequest` asserts that no
+virtual thread pins its carrier, and against OkHttp 5.4.0 on JDK 21 one does:
+
+```
+VirtualThread[#51]/runnable@ForkJoinPool-1-worker-3 reason:MONITOR
+    okhttp3.internal.http2.Http2Writer.flush(Http2Writer.kt:131) <== monitors:1
+    okhttp3.internal.http2.Http2Connection.newStream(Http2Connection.kt:270) <== monitors:2
+```
+
+`Http2Connection.newStream` holds a monitor across `Http2Writer.flush`'s blocking write.
+JEP 491 removes this class of pinning on JDK 24+, so the same test should pass there —
+which is exactly the kind of difference this repository exists to record.
+
+Everything else stays fatal. That is deliberate: a fatal `test` task is what caught the
+MockServer client/server version mismatch on the first run that reached a Docker daemon.
+Move a suite into the reporting category only when it is asserting about OkHttp's
+behaviour, never to quiet a test that is genuinely broken here.
 
 Reading a failure
 -----------------

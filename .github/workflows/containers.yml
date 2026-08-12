@@ -40,14 +40,18 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
 
       - name: Run Container Tests
+        # --continue so a failing container test doesn't stop loomTest from running:
+        # every suite should report every run, whatever the others did.
         run: >
-          ./gradlew containers:test
+          ./gradlew containers:test containers:loomTest --continue
           ${{ inputs.okhttpVersion && format('-PokhttpVersion={0}', inputs.okhttpVersion) || '' }}
 
+      # Both tasks' XML, including loomTest's, which records findings without failing
+      # the build. The status page reads results from here, not from the job's colour.
       - name: Upload Test Results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: container-test-results
-          path: containers/build/test-results/test/*.xml
+          path: containers/build/test-results/*/*.xml
           retention-days: 30
