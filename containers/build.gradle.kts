@@ -25,7 +25,7 @@ tasks.test {
   exclude(loomTestPattern)
 }
 
-val loomTest by tasks.registering(Test::class) {
+val loomTest = tasks.register<Test>("loomTest") {
   group = "verification"
   description = "Reports carrier-thread pinning in OkHttp. Records failures without failing the build."
 
