@@ -2,7 +2,9 @@
 assertk = "0.28.1"
 junit-platform = "1.14.4"
 kotlin = "2.2.21"
-mockserver-client = "7.5.0"
+# Must match the mockserver/mockserver image tag; the client refuses to talk to a
+# server whose major.minor differs. Injected into the tests as mockserver.version.
+mockserver = "7.4.0"
 okhttp = "5.4.0"
 org-junit-jupiter = "5.13.4"
 testcontainers = "1.21.4"
@@ -14,7 +16,7 @@ junit-jupiter-engine = { module = "org.junit.jupiter:junit-jupiter-engine", vers
 junit-jupiter-params = { module = "org.junit.jupiter:junit-jupiter-params", version.ref = "org-junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junit-platform" }
 mockserver = { module = "org.testcontainers:mockserver", version.ref = "testcontainers" }
-mockserver-client = { module = "org.mock-server:mockserver-client-java-no-dependencies", version.ref = "mockserver-client" }
+mockserver-client = { module = "org.mock-server:mockserver-client-java-no-dependencies", version.ref = "mockserver" }
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
 testcontainers = { module = "org.testcontainers:testcontainers", version.ref = "testcontainers" }
 testcontainers-junit5 = { module = "org.testcontainers:junit-jupiter", version.ref = "testcontainers" }

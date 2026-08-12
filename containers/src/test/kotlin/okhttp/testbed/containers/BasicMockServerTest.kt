@@ -78,10 +78,19 @@ class BasicMockServerTest {
   }
 
   companion object {
+    // MockServer's client refuses to talk to a server whose major.minor version differs,
+    // so the image tag comes from the same catalog entry as the client dependency rather
+    // than being pinned separately here. The build sets this property.
+    private val MOCKSERVER_VERSION: String =
+      checkNotNull(System.getProperty("mockserver.version")) {
+        "mockserver.version is not set — run these tests through Gradle, which supplies it " +
+          "from gradle/libs.versions.toml"
+      }
+
     val MOCKSERVER_IMAGE: DockerImageName =
       DockerImageName
         .parse("mockserver/mockserver")
-        .withTag("mockserver-7.4.0")
+        .withTag("mockserver-$MOCKSERVER_VERSION")
 
     fun OkHttpClient.Builder.trustMockServer(): OkHttpClient.Builder =
       apply {

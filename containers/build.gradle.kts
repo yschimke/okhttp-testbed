@@ -5,6 +5,12 @@ val okhttpVersion =
     .gradleProperty("okhttpVersion")
     .getOrElse(libs.versions.okhttp.get())
 
+tasks.withType<Test>().configureEach {
+  // Single source of truth for the MockServer version: the container image tag is
+  // derived from it, so the client and the server can't drift apart.
+  systemProperty("mockserver.version", libs.versions.mockserver.get())
+}
+
 dependencies {
   testImplementation("com.squareup.okhttp3:okhttp:$okhttpVersion")
 
