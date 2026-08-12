@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package okhttp3.containers
+package okhttp.testbed.containers
 
 import assertk.assertThat
 import assertk.assertions.contains
@@ -23,7 +23,7 @@ import java.net.Proxy.Type.SOCKS
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.containers.BasicMockServerTest.Companion.MOCKSERVER_IMAGE
+import okhttp.testbed.containers.BasicMockServerTest.Companion.MOCKSERVER_IMAGE
 import org.junit.jupiter.api.Test
 import org.mockserver.client.MockServerClient
 import org.mockserver.model.HttpRequest.request

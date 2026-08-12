@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package okhttp3.containers
+package okhttp.testbed.containers
 
 import assertk.assertThat
 import assertk.assertions.contains

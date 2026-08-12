@@ -28,6 +28,15 @@ nothing depends on OkHttp's unpublished test fixtures (`okhttp-testing-support`)
 released or snapshot version can be dropped in without the tests needing to change. That
 is what makes `-PokhttpVersion` meaningful: the results compare versions, not builds.
 
+Two things enforce that, rather than leaving it to good intentions:
+
+- Suites live under `okhttp.testbed.*`, outside OkHttp's own `okhttp3` package, so no test
+  can quietly lean on package-level access.
+- `checkPublicApiOnly` fails the build on any import of `okhttp3.internal`,
+  `okhttp3.testing`, `mockwebserver3.internal` or `okio.internal`. It runs as part of
+  `check` and before every `test` task. Extend `forbiddenImports` in the root
+  `build.gradle.kts` as new dependencies arrive.
+
 Where a test needs something the public API doesn't offer, prefer solving it with the
 container instead of reaching into OkHttp — for example `BasicMockServerTest.trustMockServer()`
 builds a real trust manager from MockServer's own keystore rather than disabling
