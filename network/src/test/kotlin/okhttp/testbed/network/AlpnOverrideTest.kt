@@ -16,7 +16,7 @@
 package okhttp.testbed.network
 
 import assertk.assertThat
-import assertk.assertions.contains
+import assertk.assertions.containsExactly
 import assertk.assertions.isEqualTo
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
@@ -25,6 +25,7 @@ import okhttp3.Connection
 import okhttp3.ConnectionSpec
 import okhttp3.EventListener
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import okhttp3.Request
 import org.junit.jupiter.api.Test
 
@@ -32,9 +33,15 @@ import org.junit.jupiter.api.Test
  * Confirms an application can choose the ALPN protocols itself.
  *
  * OkHttp sets ALPN from its own protocol list, so an override only survives if OkHttp is told to
- * leave TLS extensions alone — that is what `supportsTlsExtensions(false)` is doing here. The test
- * asserts what the socket ended up requesting, because a call that succeeds while OkHttp quietly
- * put its own list back would otherwise look identical.
+ * leave TLS extensions alone — that is what `supportsTlsExtensions(false)` is doing here. Both
+ * halves are asserted: what the socket requested, and what came back. A call that succeeds while
+ * OkHttp quietly put its own list back looks identical from the response code alone.
+ *
+ * The override offers HTTP/1.1, which is not what this client would otherwise settle on with a
+ * server that speaks HTTP/2 — so the protocol of the response is the evidence that the override
+ * reached the wire. The Android test this came from offers `x-amzn-http-ca`, which nothing here
+ * speaks, leaving the outcome to whether the server tolerates an unknown protocol or answers with
+ * `no_application_protocol`: that tests the server, not OkHttp.
  *
  * Ported from OkHttp's `android-test`, where it ran as a `Remote` test.
  */
@@ -88,13 +95,14 @@ class AlpnOverrideTest {
         .build()
     client.newCall(request).execute().use { response ->
       assertThat(response.code).isEqualTo(200)
+      assertThat(response.protocol).isEqualTo(Protocol.HTTP_1_1)
     }
 
-    assertThat(requestedProtocols).contains(ALPN_PROTOCOL)
+    assertThat(requestedProtocols).containsExactly(ALPN_PROTOCOL)
   }
 
   companion object {
-    /** Not a protocol any of these servers speak; the point is that we got to ask for it. */
-    private const val ALPN_PROTOCOL = "x-amzn-http-ca"
+    /** What the application asks for, in place of the h2-first list OkHttp would send. */
+    private const val ALPN_PROTOCOL = "http/1.1"
   }
 }
