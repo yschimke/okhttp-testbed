@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test servers — OkHttp Testbed</title>
+<meta name="description" content="A survey of the public HTTP, TLS and DNS test servers that HTTP clients test against — badssl, httpbin, nghttp2, DoH resolvers, ECH endpoints — and the roadmap for pointing the OkHttp testbed at them.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="site-title" href="../">OkHttp Testbed <span>status</span></a>
+    <nav class="site-nav">
+      <a href="../">Status</a>
+      <a href="ech.html">ECH</a>
+      <a href="dns.html">DNS</a>
+      <a href="tls.html">TLS</a>
+      <a href="proxies.html">Proxies</a>
+      <a href="loom.html">Virtual threads</a>
+      <a href="test-servers.html" aria-current="page">Test servers</a>
+      <a href="https://github.com/yschimke/okhttp-testbed">GitHub ↗</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <h1>Test servers</h1>
+  <p class="lede">
+    A survey of the public HTTP, TLS and DNS servers that client authors test against — the ones
+    behind rustls's connect tests, curl's HTTP/3 notes, and every browser's certificate-error UI —
+    and the roadmap for pointing this testbed at the ones that would tell us something about OkHttp.
+  </p>
+
+  <h2>Why survey them at all</h2>
+  <p>
+    OkHttp's own test suite talks to MockWebServer, which shares its framing and its TLS setup with
+    the client under test. That is the right way to test parsing and state machines, and it is
+    structurally unable to answer a different class of question: does the ClientHello OkHttp emits
+    look acceptable to a CDN, does <code>1.1.1.1</code> still return the <code>HTTPS</code> record
+    the ECH code needs, is an expired certificate still refused on Android 14 as it is on JDK 21.
+    Those are properties of the internet and of the platform, and they are checked by running
+    against them.
+  </p>
+  <p>
+    Nearly every serious HTTP or TLS client does some version of this. rustls keeps a
+    <code>connect-tests</code> crate that opens real connections to a fixed list of top sites and to
+    badssl.com. curl documents public HTTP/3 endpoints for exactly this reason. The browsers built
+    badssl.com in the first place, to have somewhere to point their certificate-error UI at. What
+    follows is what is out there, what each one is good for, and — as much as it matters — what each
+    one is <em>not</em> good for.
+  </p>
+
+  <h2>The two rules this roadmap is written to</h2>
+  <p>
+    Network tests have a bad reputation, and it is deserved when they are written carelessly. Two
+    rules keep them worth having:
+  </p>
+  <ol>
+    <li>
+      <strong>A test asserting a connection succeeds is fragile against the internet; one asserting
+      it is refused is not.</strong> Certificates get renewed, CDNs move, resolvers rate-limit. So
+      the strongest network suite available is the one where every assertion is negative — the
+      badssl matrix — and positive assertions belong against something we control.
+    </li>
+    <li>
+      <strong>Self-host what we can; reach out for what we cannot.</strong> go-httpbin and badssl
+      both ship containers. Most of the HTTP-semantics and bad-chain coverage can run in
+      <code>containers</code>, fatal and deterministic, with the public endpoint checking the
+      <em>same</em> property against the real internet. Agreement is the expected result;
+      disagreement is the finding.
+    </li>
+  </ol>
+  <p>
+    Everything that reaches a third party lands in a suite that
+    <a href="../#suites">reports rather than gates</a>, alongside <code>loomTest</code>. A rate
+    limit at Cloudflare is not this repository being red.
+  </p>
+
+  <h2>HTTP semantics and request echo</h2>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Server</th><th>Operator</th><th>What it is good for</th><th>Caveat</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono"><a href="https://httpbin.org/">httpbin.org</a></td>
+          <td>Kenneth Reitz</td>
+          <td>The original. Redirects, status codes, auth, compression, streaming, cookies, delays — the vocabulary every later service copied.</td>
+          <td>Rate-limited and intermittently down. Worth one smoke request, not a suite.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://httpbingo.org/">httpbingo.org</a></td>
+          <td>Will McCutchen</td>
+          <td>A complete Go port of httpbin with no dependencies outside the stdlib. The public instance of <code>go-httpbin</code>.</td>
+          <td>Same endpoints, better uptime; still someone else's server.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://github.com/mccutchen/go-httpbin">ghcr.io/mccutchen/go-httpbin</a></td>
+          <td>Will McCutchen</td>
+          <td><strong>The container.</strong> Published per release for amd64 and arm64. This is where the HTTP-semantics assertions should actually live.</td>
+          <td>None worth mentioning — pin the tag, as <code>mockserver</code> is pinned.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://testserver.host/">testserver.host</a></td>
+          <td>HTTP Toolkit</td>
+          <td>The one built for hostile cases: malformed chunking, resets mid-body, invalid framing. Endpoints are chainable, so <code>/delay/1/error/reset</code> is one request. Self-hostable as a single container.</td>
+          <td>Newer and less widely used than httpbin, so less battle-tested as a reference.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://pie.dev/">pie.dev</a></td>
+          <td>HTTPie</td>
+          <td>A third httpbin instance — a tiebreaker when two disagree.</td>
+          <td>Undocumented as a public API.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://postman-echo.com/">postman-echo.com</a></td>
+          <td>Postman</td>
+          <td>Request echo, good for header fidelity specifically.</td>
+          <td>Commercially operated; terms may change.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://nghttp2.org/httpbin/">nghttp2.org/httpbin</a></td>
+          <td>Tatsuhiro Tsujikawa</td>
+          <td>httpbin's endpoints served over HTTP/2 by the reference C implementation — the same assertions, one protocol up.</td>
+          <td>One person's server. Do not lean on it.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">
+    The endpoint worth singling out is <code>/anything</code>, which echoes the whole request back as
+    JSON. It is the only honest check of what OkHttp <em>sent</em> — header order, casing,
+    <code>Accept-Encoding</code>, <code>Connection</code> — rather than what it claims to have sent.
+  </p>
+
+  <h2>HTTP/2 and HTTP/3</h2>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Server</th><th>Protocol</th><th>What it is good for</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono"><a href="https://nghttp2.org/">nghttp2.org</a></td>
+          <td>h2, h2c</td>
+          <td>An independent framing and HPACK implementation. Connection coalescing, <code>GOAWAY</code>, flow control and trailers against something that does not share OkHttp's code.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://cloudflare-quic.com/">cloudflare-quic.com</a></td>
+          <td>h3</td>
+          <td>Advertises h3 over <code>Alt-Svc</code>. Since OkHttp has no HTTP/3, the test is that the advertisement is ignored gracefully.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://quic.nginx.org/">quic.nginx.org</a></td>
+          <td>h3</td>
+          <td>NGINX's QUIC preview — a second h3 implementation to compare fallback behaviour against.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://github.com/quic-interop/quic-interop-runner">quic-interop-runner</a></td>
+          <td>QUIC, h3</td>
+          <td>Every participating QUIC implementation packaged as a Docker image behind one interface, with a network simulator. The ready-made local matrix if HTTP/3 support ever lands.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://github.com/summerwind/h2spec">h2spec</a></td>
+          <td>h2</td>
+          <td>Listed to rule it out: h2spec is a <em>server</em> conformance tool. It is useful for validating a local h2 fixture before trusting its results, and not for testing a client.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>TLS</h2>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Server</th><th>Operator</th><th>What it is good for</th><th>Caveat</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono"><a href="https://badssl.com/">badssl.com</a></td>
+          <td>Chrome and Firefox contributors</td>
+          <td>The canonical broken-configuration matrix: expired, wrong host, self-signed, untrusted root, incomplete chain, revoked, SHA-1, weak DH, RC4, 3DES, null, and the known-compromised keys shipped in real products (Superfish, eDellRoot). Per-version ports — <code>tls-v1-0…:1010</code>, <code>:1011</code>, <code>:1012</code> — and client-certificate endpoints. Self-hostable from the repository, which generates its own CA.</td>
+          <td>Explicitly best-effort: "anything could change without notice". Not an official Google product.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://www.howsmyssl.com/s/api.html">howsmyssl.com/a/check</a></td>
+          <td>Jeff Hodges</td>
+          <td>Returns JSON describing the client's own ClientHello: negotiated version, offered cipher suites, session-ticket and ephemeral-key support, and a rating. A machine-readable view of what OkHttp sends.</td>
+          <td>Offered for testing clients under your control — one request per scheduled run, never in a loop.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://browserleaks.com/tls">browserleaks.com/tls</a></td>
+          <td>BrowserLeaks</td>
+          <td>JA3 and JA4 fingerprints, the full extension and supported-group lists. The decoded ClientHello rather than a summary.</td>
+          <td>Built for browsers; the HTML view needs scraping to be machine-readable.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://www.ssllabs.com/ssltest/viewMyClient.html">SSL Labs client test</a></td>
+          <td>Qualys</td>
+          <td>The reference analysis of a client's handshake, including suite ordering and known-weakness flags.</td>
+          <td>Reference material rather than an assertion target.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://www.browserscan.net/tls">browserscan.net</a>, <a href="https://tlsfingerprint.io/">tlsfingerprint.io</a></td>
+          <td>various</td>
+          <td>JA3/JA4 plus HTTP/2 fingerprints — <code>SETTINGS</code> values, header ordering, priority — which is the other half of how a CDN identifies a client.</td>
+          <td>Commercial or research services with no uptime promise.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://tls-o-matic.com/">tls-o-matic.com</a></td>
+          <td>Simon Josefsson</td>
+          <td>A port per client-authentication scenario — useful as a second implementation of mutual TLS with different <code>CertificateRequest</code> contents.</td>
+          <td>Small, volunteer-operated.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://tls13.akamai.io/">tls13.akamai.io</a></td>
+          <td>Akamai</td>
+          <td>A TLS 1.3 endpoint on a stack that is neither OpenSSL-on-Linux nor Cloudflare.</td>
+          <td>A demo page, not a documented service.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">
+    The JA3/JA4 services deserve more weight than they first appear to. The ClientHello OkHttp
+    produces is mostly the <em>platform's</em>, and if it shifts between releases or between Android
+    API levels, every OkHttp application's treatment by Cloudflare, Akamai and DataDome shifts with
+    it. Users experience that as "the API started returning 403 after we upgraded", and today nobody
+    can point at what changed.
+  </p>
+
+  <h2>DNS</h2>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Endpoint</th><th>Operator</th><th>What it is good for</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono">https://1.1.1.1/dns-query</td>
+          <td>Cloudflare</td>
+          <td>Addressed by IP, so resolving the resolver needs no resolver. Returns <code>HTTPS</code> records including the <code>ech</code> parameter.</td>
+        </tr>
+        <tr>
+          <td class="mono">https://dns.google/dns-query</td>
+          <td>Google</td>
+          <td>A second implementation, with a JSON API alongside the wire format — so its own answers can be cross-checked.</td>
+        </tr>
+        <tr>
+          <td class="mono">https://dns.quad9.net/dns-query</td>
+          <td>Quad9</td>
+          <td>Filtering resolver: the case where an answer is deliberately withheld.</td>
+        </tr>
+        <tr>
+          <td class="mono">https://dns.adguard-dns.com/dns-query</td>
+          <td>AdGuard</td>
+          <td>A second filtering resolver, filtering different things.</td>
+        </tr>
+        <tr>
+          <td class="mono">www.dnssec-failed.org</td>
+          <td>Comcast</td>
+          <td>The long-standing bogus-signature name: <code>SERVFAIL</code> from any validating resolver.</td>
+        </tr>
+        <tr>
+          <td class="mono">sigok / sigfail.ippacket.stream</td>
+          <td>—</td>
+          <td>A matched pair that isolates DNSSEC validation from reachability.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://rootcanary.org/test.html">rootcanary.org</a></td>
+          <td>NLnet Labs and partners</td>
+          <td>Per-algorithm validation, including the newer algorithms where resolvers genuinely differ.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://test-ipv6.com/">test-ipv6.com</a></td>
+          <td>Jason Fesler</td>
+          <td><code>ipv4.</code>, <code>ipv6.</code> and <code>ds.</code> names for Happy Eyeballs — single-stack and dual-stack answers on demand.</td>
+        </tr>
+        <tr>
+          <td class="mono">ipv4only.arpa</td>
+          <td>IETF (RFC 7050)</td>
+          <td>A name that is v4-only by definition, and stays that way.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Encrypted Client Hello</h2>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Endpoint</th><th>Operator</th><th>What it is good for</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono">https://crypto.cloudflare.com/cdn-cgi/trace</td>
+          <td>Cloudflare Research</td>
+          <td>Answers <code>sni=encrypted</code> or <code>sni=plaintext</code>. A machine-readable ECH result is rare, and it is what makes this the primary public target.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://defo.ie/">defo.ie</a></td>
+          <td>DEfO (ECH for OpenSSL)</td>
+          <td>The interop reference: hosts exercising acceptance, retry-config, GREASE and rejection, against OpenSSL rather than Go. <a href="https://test.defo.ie/domainechprobe.php">domainechprobe</a> checks any name's <code>HTTPS</code> RR and ECHConfigList server-side.</td>
+        </tr>
+        <tr>
+          <td class="mono">https://tls-ech.dev/</td>
+          <td>Cloudflare Research</td>
+          <td>A second Cloudflare-side configuration.</td>
+        </tr>
+        <tr>
+          <td class="mono"><code>ech-fixture</code> (container)</td>
+          <td>this repository</td>
+          <td>What runs today — origin and DoH resolver, three hostnames for accepted, retried and declined. See <a href="ech.html">the ECH page</a>.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">
+    ECH configurations rotate, so a config list must always come from DNS at run time and never be
+    pinned in a test. That is not a workaround; it is the mechanism working as designed.
+  </p>
+
+  <h2>The roadmap</h2>
+  <p>
+    Tracked in <a href="https://github.com/yschimke/okhttp-testbed/issues/5">issue #5</a>. Nothing
+    below is implemented yet — this page is the plan on the record before the code is.
+  </p>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Phase</th><th>Issue</th><th>Servers involved</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td rowspan="3">Infrastructure</td>
+          <td><a href="https://github.com/yschimke/okhttp-testbed/issues/6">#6</a> A <code>network</code> suite that reports rather than gates</td>
+          <td>—</td>
+        </tr>
+        <tr>
+          <td><a href="https://github.com/yschimke/okhttp-testbed/issues/7">#7</a> Reachability preflight, and endpoint availability on this site</td>
+          <td>all of them</td>
+        </tr>
+        <tr>
+          <td><a href="https://github.com/yschimke/okhttp-testbed/issues/8">#8</a> Self-host the fixtures we depend on</td>
+          <td>go-httpbin, badssl, nghttp2 or Caddy</td>
+        </tr>
+        <tr>
+          <td rowspan="4">HTTP</td>
+          <td><a href="https://github.com/yschimke/okhttp-testbed/issues/9">#9</a> HTTP semantics against the httpbin family</td>
+          <td>go-httpbin, httpbingo, pie.dev, postman-echo</td>
+        </tr>
+        <tr>
+          <td><a href="https://github.com/yschimke/okhttp-testbed/issues/10">#10</a> Hostile and malformed responses</td>
+          <td>testserver.host</td>
+        </tr>
+        <tr>
+          <td><a href="https://github.com/yschimke/okhttp-testbed/issues/11">#11</a> HTTP/2 against an independent stack</td>
+          <td>nghttp2.org, local nghttpd</td>
+        </tr>
+        <tr>
+          <td><a href="https://github.com/yschimke/okhttp-testbed/issues/12">#12</a> HTTP/3 and <code>Alt-Svc</code>: record what OkHttp does today</td>
+          <td>cloudflare-quic, quic.nginx.org, interop runner</td>
+        </tr>
+        <tr>
+          <td rowspan="5">TLS</td>
+          <td><a href="https://github.com/yschimke/okhttp-testbed/issues/13">#13</a> The badssl matrix: chains that must be rejected</td>
+          <td>badssl.com, local badssl</td>
+        </tr>
+        <tr>
+          <td><a href="https://github.com/yschimke/okhttp-testbed/issues/14">#14</a> Version and cipher policy through <code>ConnectionSpec</code></td>
+          <td>badssl version ports, tls13.akamai.io</td>
+        </tr>
+        <tr>
+          <td><a href="https://github.com/yschimke/okhttp-testbed/issues/15">#15</a> Client certificates against a real server</td>
+          <td>client.badssl.com, tls-o-matic</td>
+        </tr>
+        <tr>
+          <td><a href="https://github.com/yschimke/okhttp-testbed/issues/16">#16</a> Revocation, pinning and Certificate Transparency</td>
+          <td>revoked and pinning-test badssl</td>
+        </tr>
+        <tr>
+          <td><a href="https://github.com/yschimke/okhttp-testbed/issues/17">#17</a> Publish the ClientHello OkHttp actually emits</td>
+          <td>howsmyssl, browserleaks, SSL Labs</td>
+        </tr>
+        <tr>
+          <td rowspan="4">DNS</td>
+          <td><a href="https://github.com/yschimke/okhttp-testbed/issues/18">#18</a> The DoH resolver matrix</td>
+          <td>Cloudflare, Google, Quad9, AdGuard, NextDNS</td>
+        </tr>
+        <tr>
+          <td><a href="https://github.com/yschimke/okhttp-testbed/issues/19">#19</a> <code>HTTPS</code> and <code>SVCB</code> record consumption</td>
+          <td>public names, extended <code>ech-fixture</code></td>
+        </tr>
+        <tr>
+          <td><a href="https://github.com/yschimke/okhttp-testbed/issues/20">#20</a> Resolver failure modes: SERVFAIL, bogus, NXDOMAIN</td>
+          <td>dnssec-failed.org, sigok/sigfail, rootcanary</td>
+        </tr>
+        <tr>
+          <td><a href="https://github.com/yschimke/okhttp-testbed/issues/21">#21</a> Happy Eyeballs against real names</td>
+          <td>test-ipv6.com, ipv4only.arpa, local dual-stack</td>
+        </tr>
+        <tr>
+          <td>ECH</td>
+          <td><a href="https://github.com/yschimke/okhttp-testbed/issues/22">#22</a> ECH against public servers</td>
+          <td>crypto.cloudflare.com, defo.ie, tls-ech.dev</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>What was considered and left out</h2>
+  <ul>
+    <li>
+      <strong>h2spec and h3spec.</strong> Server conformance tools. Useful for validating a local
+      fixture, useless for testing a client.
+    </li>
+    <li>
+      <strong>Top-site sweeps.</strong> rustls connects to a list of large sites and asserts the
+      handshake completes. It is a real smoke test, but a failure names a website rather than a
+      behaviour, so it produces alerts nobody can act on. One or two, not thirteen.
+    </li>
+    <li>
+      <strong>Load and performance targets.</strong> Not against servers other people pay for.
+    </li>
+    <li>
+      <strong>Anything needing <code>okhttp3.internal</code>.</strong> The public-API-only rule is
+      what makes <code>-PokhttpVersion</code> mean something, and it is enforced by
+      <code>checkPublicApiOnly</code>.
+    </li>
+  </ul>
+
+  <h2>Being a good citizen</h2>
+  <p>
+    Every server on this page is operated by someone else, most of them for free, several by one
+    person. The testbed's daily schedule is the whole budget: one request per endpoint per run, no
+    retries in a loop, no network suites on pull requests, and a preflight that skips an endpoint
+    that is throttling rather than hammering it. Where a service asks to be used only for clients
+    under your control — How's My SSL says so explicitly — that is exactly what this is.
+  </p>
+
+  <p class="note">
+    None of the network suites run yet. The <a href="../">status page</a> lists what exists today;
+    this page is the survey the roadmap was drawn from.
+  </p>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span>OkHttp Testbed — Apache 2.0</span>
+    <a href="https://github.com/yschimke/okhttp-testbed">Repository</a>
+    <a href="https://github.com/square/okhttp">OkHttp</a>
+  </div>
+</footer>
+
+</body>
+</html>

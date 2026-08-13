@@ -24,6 +24,11 @@ and the ECH test servers at `tls-ech.dev` and `defo.ie`. They came from OkHttp's
 reason they are here rather than there: they need the internet, and they can fail for
 reasons that have nothing to do with a change under review.
 
+More of them are planned. The survey they are being drawn from — which public HTTP, TLS and
+DNS test servers exist, what each one is good for, and what it is not — is published as a
+[topic page][test-servers], and broken down into issues under the
+[roadmap tracking issue][roadmap].
+
 The rest of the Android device matrix is still to come. One of OkHttp's `Remote` tests is
 waiting on it and could not move: `AndroidNetworksTest`, which pins a call to a
 `ConnectivityManager` network — that tests an Android platform API, not something a JVM can
@@ -195,7 +200,8 @@ Status site
 <https://yschimke.github.io/okhttp-testbed/> — the most recent results per OkHttp version,
 per suite, across both workflows, with the failing assertions in full, a history strip, and
 a topic page per area covered (ECH, DNS, TLS, proxies, virtual threads) linking the relevant
-RFCs and the test servers involved.
+RFCs and the test servers involved, and a [survey of the public test servers][test-servers]
+the `network` suite runs against today and the planned ones will grow into.
 
 The site is `site/`, deployed as it sits: plain HTML and CSS, no static site generator, no
 build step. The only generated files are `site/data/latest.json` and `site/data/history.json`.
@@ -283,3 +289,5 @@ Apache 2.0, as OkHttp is. The tests in `containers` and `network` were moved fro
 OkHttp repository and keep their original copyright headers.
 
 [okhttp]: https://github.com/square/okhttp
+[test-servers]: https://yschimke.github.io/okhttp-testbed/topics/test-servers.html
+[roadmap]: https://github.com/yschimke/okhttp-testbed/issues/5
