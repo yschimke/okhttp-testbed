@@ -21,5 +21,6 @@ dependencyResolutionManagement {
 }
 
 include(":containers")
+include(":network")
 include(":ech-fixture")
 include(":android-ech")

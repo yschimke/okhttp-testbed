@@ -1,0 +1,104 @@
+name: network
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  schedule:
+    # Daily, so a change at one of the servers these tests call — or in a published
+    # OkHttp — shows up without anyone pushing to this repo.
+    - cron: '43 6 * * *'
+  workflow_dispatch:
+    inputs:
+      okhttpVersion:
+        description: 'OkHttp version under test (e.g. 5.4.0, 5.5.0-SNAPSHOT)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false -Dkotlin.incremental=false"
+
+jobs:
+  network:
+    name: network (${{ matrix.okhttpVersion || 'pinned release' }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      # Each version reports independently. One version failing must not cancel the
+      # other's run, because the difference between them is the result we're after.
+      fail-fast: false
+      matrix:
+        # An empty entry means the release pinned in libs.versions.toml. As with the
+        # containers workflow, the scheduled and manual runs add the current snapshot;
+        # for this suite that is what covers ECH at all, since the ECH API landed after
+        # 5.4.0 and the suite is left out of the build on versions without it.
+        okhttpVersion: >-
+          ${{ fromJSON(
+            inputs.okhttpVersion && format('["{0}"]', inputs.okhttpVersion)
+            || ((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+                && '["", "5.5.0-SNAPSHOT"]')
+            || '[""]'
+          ) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Configure JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Run Network Tests
+        # --continue so a failing suite doesn't stop echTest from running: every suite
+        # should report every run, whatever the others did.
+        run: >
+          ./gradlew network:test network:echTest --continue
+          ${{ matrix.okhttpVersion && format('-PokhttpVersion={0}', matrix.okhttpVersion) || '' }}
+
+      # What the XML can't say: which OkHttp version 'pinned' actually resolved to, and
+      # what the job as a whole did. The status page names the version under test, so it
+      # has to be recorded by the run rather than guessed from the artifact name.
+      - name: Record Run Metadata
+        if: always()
+        run: |
+          version='${{ matrix.okhttpVersion }}'
+          if [ -z "$version" ]; then
+            version=$(sed -n 's/^okhttp = "\(.*\)"$/\1/p' gradle/libs.versions.toml)
+          fi
+          mkdir -p network/build/test-results
+          cat > network/build/test-results/run-metadata.json <<JSON
+          {
+            "workflow": "network",
+            "label": "${{ matrix.okhttpVersion || 'pinned' }}",
+            "okhttpVersion": "$version",
+            "javaVersion": "21",
+            "jobStatus": "${{ job.status }}",
+            "runNumber": ${{ github.run_number }},
+            "runUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+            "commit": "${{ github.sha }}",
+            "event": "${{ github.event_name }}",
+            "taskFromPath": true,
+            "finishedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          JSON
+
+      # Both tasks' XML, including echTest's, which records findings without failing the
+      # build. The status page reads results from here, not from the job's colour.
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: network-test-results-${{ matrix.okhttpVersion || 'pinned' }}
+          path: |
+            network/build/test-results/*/*.xml
+            network/build/test-results/run-metadata.json
+          retention-days: 30
