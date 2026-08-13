@@ -18,7 +18,10 @@ Suites
 | `android-ech` | Docker, an API 37 emulator  | Encrypted Client Hello over DoH: accepted, retried, and declined     |
 
 More suites are planned — notably network tests against external IETF and vendor test
-servers, and the rest of the Android device matrix.
+servers, and the rest of the Android device matrix. The survey those network suites are
+being drawn from — which public HTTP, TLS and DNS test servers exist, what each one is
+good for, and what it is not — is published as a [topic page][test-servers], and broken
+down into issues under the [roadmap tracking issue][roadmap].
 
 Public API only
 ---------------
@@ -163,7 +166,8 @@ Status site
 <https://yschimke.github.io/okhttp-testbed/> — the most recent results per OkHttp version,
 per suite, across both workflows, with the failing assertions in full, a history strip, and
 a topic page per area covered (ECH, DNS, TLS, proxies, virtual threads) linking the relevant
-RFCs and the test servers involved.
+RFCs and the test servers involved, and a [survey of the public test servers][test-servers]
+the planned network suites will run against.
 
 The site is `site/`, deployed as it sits: plain HTML and CSS, no static site generator, no
 build step. The only generated files are `site/data/latest.json` and `site/data/history.json`.
@@ -243,3 +247,5 @@ Apache 2.0, as OkHttp is. The tests in `containers` were moved from the OkHttp r
 and keep their original copyright headers.
 
 [okhttp]: https://github.com/square/okhttp
+[test-servers]: https://yschimke.github.io/okhttp-testbed/topics/test-servers.html
+[roadmap]: https://github.com/yschimke/okhttp-testbed/issues/5
