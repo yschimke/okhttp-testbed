@@ -1,20 +1,5 @@
-// The version of OkHttp under test. Override to check a release candidate or a snapshot:
-//   ./gradlew test -PokhttpVersion=5.5.0-SNAPSHOT
-val okhttpVersion =
-  providers
-    .gradleProperty("okhttpVersion")
-    .getOrElse(libs.versions.okhttp.get())
-
-// A snapshot has to be re-resolved every run. Gradle caches changing modules for 24 hours,
-// and the daily job restores the dependency cache from the previous run, so without this a
-// run can quietly test yesterday's build under today's name — exactly the failure mode a
-// daily snapshot run exists to avoid. Releases are immutable, so this only applies to
-// snapshots and leaves the normal build's caching alone.
-if (okhttpVersion.endsWith("-SNAPSHOT")) {
-  configurations.configureEach {
-    resolutionStrategy.cacheChangingModulesFor(0, "seconds")
-  }
-}
+// The version of OkHttp under test, resolved in the root build so every suite agrees.
+val okhttpVersion: String by extra
 
 tasks.withType<Test>().configureEach {
   // Single source of truth for the MockServer version: the container image tag is

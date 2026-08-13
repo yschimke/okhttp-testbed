@@ -12,3 +12,4 @@ dependencyResolutionManagement {
 }
 
 include(":containers")
+include(":network")
