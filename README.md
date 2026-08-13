@@ -12,12 +12,13 @@ schedule, and publishes the current status.
 Suites
 ------
 
-| Suite        | What it needs      | What it covers                                                    |
-|--------------|--------------------|-------------------------------------------------------------------|
-| `containers` | Docker             | SOCKS5 and HTTP proxies, TLS via MockServer, virtual threads (Loom) |
+| Suite         | What it needs               | What it covers                                                      |
+|---------------|-----------------------------|---------------------------------------------------------------------|
+| `containers`  | Docker                      | SOCKS5 and HTTP proxies, TLS via MockServer, virtual threads (Loom)  |
+| `android-ech` | Docker, an API 37 emulator  | Encrypted Client Hello over DoH: accepted, retried, and declined     |
 
 More suites are planned — notably network tests against external IETF and vendor test
-servers, and the heavier Android device matrix.
+servers, and the rest of the Android device matrix.
 
 Public API only
 ---------------
@@ -34,7 +35,8 @@ Two things enforce that, rather than leaving it to good intentions:
   can quietly lean on package-level access.
 - `checkPublicApiOnly` fails the build on any import of `okhttp3.internal`,
   `okhttp3.testing`, `mockwebserver3.internal` or `okio.internal`. It runs as part of
-  `check` and before every `test` task. Extend `forbiddenImports` in the root
+  `check`, before every `test` task, and before the Android suite's `connected…AndroidTest`
+  task, which `check` doesn't cover. Extend `forbiddenImports` in the root
   `build.gradle.kts` as new dependencies arrive.
 
 Where a test needs something the public API doesn't offer, prefer solving it with the
@@ -63,6 +65,51 @@ another release, a release candidate, or a snapshot:
 ```
 
 Snapshots resolve from Sonatype; releases from Maven Central.
+
+The ECH suite
+-------------
+
+`android-ech` tests Encrypted Client Hello end to end. It needs Docker *and* an emulator,
+which is why it is its own suite with its own workflow rather than another entry under
+`containers`.
+
+Two containers stand behind it, built from one small Go program in `ech-fixture`:
+
+- an origin that holds the ECH keys, generates the CA and leaf certificates, and answers
+  every request with the two facts the test is about — whether the handshake it accepted
+  used ECH, and which name it was for;
+- a DoH resolver, configured from the origin's keys, answering HTTPS records that carry an
+  ECH config list, the origin's port, and an IPv4 hint.
+
+Three hostnames give three outcomes. `green.secret.test` is published with the config the
+origin holds, so the first handshake is accepted. `retry.secret.test` is published with a
+stale config and the origin offers a retry config, so the client should retry and succeed
+with ECH. `disabled.secret.test` is published with a stale config and the origin offers
+nothing, so the client should fall back to a handshake without ECH rather than fail.
+
+The tests run on the device, and the device has no Docker — so the containers run on the
+host and the device reaches them over `adb reverse`. `ech-fixture` is what starts them:
+not a test, but a process that publishes its host ports and the fixture CA to a file and
+stays up until that file is deleted. `run-ech-test.sh` ties the two together:
+
+```
+android-ech/run-ech-test.sh              # fixture, adb reverse, instrumentation tests
+android-ech/run-ech-test.sh --smoke-only # fixture only, for a machine with no emulator
+```
+
+It needs a running emulator or a connected device on API 37 — `android.net.ssl.EchConfigList`,
+which is how OkHttp's Android platform applies a config list, arrived there. The tests skip
+themselves on anything older, and on a run that didn't come through the script.
+
+This suite tests **5.5.0-SNAPSHOT** by default, not the release the other suites pin, and
+`libs.versions.toml` carries that as a separate `ech-okhttp` version. It has to: the suite
+needs `DnsOverHttps.Builder.includeServiceMetadata`, and no release has it — 5.4.0 resolves
+A and AAAA records only, so there is no HTTPS record to carry an ECH config list. Point it
+at whatever you like with `-PokhttpVersion`, and drop `ech-okhttp` once a release ships the
+API.
+
+ECH itself is Android-only in OkHttp today: JVM platforms accept the config list and ignore
+it, so there is nothing here for the `containers` suite to assert.
 
 CI
 --
@@ -96,6 +143,13 @@ for each version, as `container-test-results-<version>` — which is what the st
 will be built from. The job runs with `--continue` so one failing suite doesn't rob the
 others of a result, and the matrix runs with `fail-fast: false` so one failing version
 doesn't rob the other.
+
+The `android-ech` workflow runs on the same events, on its own daily schedule, and uploads
+its results as `android-ech-test-results-<version>`. It runs one version rather than a
+matrix — the snapshot — because that is the only version with the API the suite needs. It
+boots an API 37 emulator, so it is slower and more failure-prone than the container jobs;
+that is the price of testing ECH at all, and it is why it is a separate workflow whose
+colour doesn't mask the container suites'.
 
 Suites that report rather than gate
 -----------------------------------

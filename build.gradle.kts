@@ -1,5 +1,9 @@
+import org.gradle.language.base.plugins.LifecycleBasePlugin
+
 plugins {
   alias(libs.plugins.kotlin.jvm) apply false
+  alias(libs.plugins.android.library) apply false
+  alias(libs.plugins.android.junit5) apply false
 }
 
 val testJavaVersion =
@@ -21,11 +25,14 @@ val forbiddenImports =
   )
 
 subprojects {
-  apply(plugin = "org.jetbrains.kotlin.jvm")
-
-  configure<JavaPluginExtension> {
-    toolchain {
-      languageVersion.set(JavaLanguageVersion.of(testJavaVersion))
+  // Suites bring their own Kotlin plugin: `android-ech` is an Android module and can't
+  // share one with the JVM suites. Everything below is common to all of them, so it
+  // reacts to whichever plugin the suite applied rather than applying one from here.
+  plugins.withId("org.jetbrains.kotlin.jvm") {
+    configure<JavaPluginExtension> {
+      toolchain {
+        languageVersion.set(JavaLanguageVersion.of(testJavaVersion))
+      }
     }
   }
 
@@ -67,8 +74,10 @@ subprojects {
       }
     }
 
-  tasks.named("check") {
-    dependsOn(checkPublicApiOnly)
+  plugins.withType<LifecycleBasePlugin> {
+    tasks.named("check") {
+      dependsOn(checkPublicApiOnly)
+    }
   }
 
   tasks.withType<Test>().configureEach {

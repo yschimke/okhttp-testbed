@@ -1,3 +1,7 @@
+plugins {
+  alias(libs.plugins.kotlin.jvm)
+}
+
 // The version of OkHttp under test. Override to check a release candidate or a snapshot:
 //   ./gradlew test -PokhttpVersion=5.5.0-SNAPSHOT
 val okhttpVersion =
