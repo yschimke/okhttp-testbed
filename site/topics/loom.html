@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Virtual threads — OkHttp Testbed</title>
+<meta name="description" content="Carrier-thread pinning in OkHttp under virtual threads: what the testbed asserts, why it currently fails, and what JEP 491 changes.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="site-title" href="../">OkHttp Testbed <span>status</span></a>
+    <nav class="site-nav">
+      <a href="../">Status</a>
+      <a href="ech.html">ECH</a>
+      <a href="dns.html">DNS</a>
+      <a href="tls.html">TLS</a>
+      <a href="proxies.html">Proxies</a>
+      <a href="loom.html" aria-current="page">Virtual threads</a>
+      <a href="https://github.com/yschimke/okhttp-testbed">GitHub ↗</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <h1>Virtual threads</h1>
+  <p class="lede">
+    A virtual thread that blocks inside a <code>synchronized</code> block pins its carrier: the
+    platform thread underneath cannot be reused while it waits. On a client whose whole point is
+    concurrency, that turns a cheap thread back into an expensive one. This suite asks whether
+    OkHttp does it.
+  </p>
+
+  <h2>What the suite asserts</h2>
+  <p>
+    <code>BasicLoomTest</code> runs a <code>Dispatcher</code> backed by
+    <code>newVirtualThreadPerTaskExecutor()</code>, fires twenty concurrent HTTPS requests at a
+    MockServer container, and asserts that the JVM printed nothing. The JVM is started with
+    <code>-Djdk.tracePinnedThreads=short</code>, so any pinning event lands on standard output; the
+    test captures that stream and requires it to be empty. It is an assertion about a side effect,
+    which is the only way to observe pinning from outside the JDK.
+  </p>
+
+  <h2>The current finding</h2>
+  <p>
+    Against OkHttp 5.4.0 on JDK 21, it fails:
+  </p>
+  <pre style="overflow-x:auto;background:var(--bg-sunken);padding:0.9rem 1rem;border-radius:8px;font-size:0.82rem;">VirtualThread[#51]/runnable@ForkJoinPool-1-worker-3 reason:MONITOR
+    okhttp3.internal.http2.Http2Writer.flush(Http2Writer.kt:131) &lt;== monitors:1
+    okhttp3.internal.http2.Http2Connection.newStream(Http2Connection.kt:270) &lt;== monitors:2</pre>
+  <p>
+    <code>Http2Connection.newStream</code> holds a monitor across <code>Http2Writer.flush</code>'s
+    blocking write. That is a true statement about the published artifact, not a broken test — so
+    the suite runs under the <code>loomTest</code> Gradle task with <code>ignoreFailures</code>.
+    The assertion stays exactly as written, the failure is recorded in the JUnit XML and shown on
+    the <a href="../">status page</a> as a <span class="pill finding">findings</span> result, and
+    the build stays green. A finding about OkHttp should not read as this repository being red.
+  </p>
+
+  <h2>Why the answer depends on the JDK</h2>
+  <p>
+    <a href="https://openjdk.org/jeps/491">JEP 491</a>, delivered in JDK 24, lets a virtual thread
+    release its carrier while blocking inside a <code>synchronized</code> method or block. The same
+    code that pins on 21 should not pin on 24 and later. Recording that difference — same artifact,
+    same test, different runtime — is exactly what a testbed running against published versions is
+    for. The suite is gated with <code>@EnabledForJreRange(min = JRE.JAVA_21)</code>, and the
+    daily run currently runs on 21.
+  </p>
+
+  <h2>References</h2>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Document</th><th>What it covers</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><a href="https://openjdk.org/jeps/444">JEP 444</a></td>
+          <td>Virtual Threads, final in JDK 21 — the feature under test.</td>
+        </tr>
+        <tr>
+          <td><a href="https://openjdk.org/jeps/491">JEP 491</a></td>
+          <td>Synchronize Virtual Threads without Pinning, JDK 24 — what should make this finding go away.</td>
+        </tr>
+        <tr>
+          <td><a href="https://docs.oracle.com/en/java/javase/21/core/virtual-threads.html">Core Libraries: Virtual Threads</a></td>
+          <td>Pinning, <code>jdk.tracePinnedThreads</code>, and how to read its output.</td>
+        </tr>
+        <tr>
+          <td><a href="https://www.rfc-editor.org/rfc/rfc9113.html">RFC 9113</a></td>
+          <td>HTTP/2 — the multiplexed write path where the monitor is held.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Reading a result</h2>
+  <p>
+    A green <code>loomTest</code> is the interesting outcome, not the boring one: it means either
+    the runtime changed underneath the test or OkHttp stopped pinning. Both are worth knowing about
+    the moment they happen, which is why the finding is recorded on every run rather than muted.
+  </p>
+  <p class="note">
+    Move a suite into this reporting category only when it is asserting about OkHttp's behaviour —
+    never to quiet a test that is genuinely broken here. Everything under the <code>test</code>
+    task stays fatal.
+  </p>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span>OkHttp Testbed — Apache 2.0</span>
+    <a href="https://github.com/yschimke/okhttp-testbed">Repository</a>
+    <a href="https://github.com/square/okhttp">OkHttp</a>
+  </div>
+</footer>
+
+</body>
+</html>

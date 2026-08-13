@@ -72,6 +72,36 @@ jobs:
             -memory 2048
           script: android-ech/run-ech-test.sh
 
+      # What the XML can't say: which OkHttp version this resolved to, and which run
+      # produced it. The status page reports both workflows as one picture, keyed by the
+      # version under test, so each artifact has to identify itself.
+      #
+      # Unlike the container suites, this XML is laid out by device rather than by Gradle
+      # task, so the task is named here instead of being read off the path.
+      - name: Record Run Metadata
+        if: always()
+        run: |
+          version='${{ inputs.okhttpVersion }}'
+          if [ -z "$version" ]; then
+            version=$(sed -n 's/^ech-okhttp = "\(.*\)"$/\1/p' gradle/libs.versions.toml)
+          fi
+          mkdir -p android-ech/build
+          cat > android-ech/build/run-metadata.json <<JSON
+          {
+            "workflow": "android-ech",
+            "label": "${{ inputs.okhttpVersion || 'pinned-snapshot' }}",
+            "okhttpVersion": "$version",
+            "javaVersion": "21",
+            "jobStatus": "${{ job.status }}",
+            "runNumber": ${{ github.run_number }},
+            "runUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+            "commit": "${{ github.sha }}",
+            "event": "${{ github.event_name }}",
+            "finishedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "task": "connectedAndroidTest"
+          }
+          JSON
+
       # The suite's XML, for the status page, whatever colour the job ended up.
       - name: Upload Test Results
         if: always()
@@ -79,6 +109,7 @@ jobs:
         with:
           name: android-ech-test-results-${{ inputs.okhttpVersion || 'pinned-snapshot' }}
           path: |
+            android-ech/build/run-metadata.json
             android-ech/build/outputs/androidTest-results/connected/**/*.xml
             android-ech/build/reports/androidTests/connected/
           retention-days: 30

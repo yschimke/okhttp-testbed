@@ -139,8 +139,9 @@ otherwise caches a changing module for 24 hours and a daily job would test yeste
 build under today's name.
 
 JUnit XML results are uploaded as artifacts on every run — from both `test` and `loomTest`,
-for each version, as `container-test-results-<version>` — which is what the status page
-will be built from. The job runs with `--continue` so one failing suite doesn't rob the
+for each version, as `container-test-results-<version>`, alongside a `run-metadata.json`
+recording which OkHttp version `pinned` actually resolved to — which is what the status page
+is built from. The job runs with `--continue` so one failing suite doesn't rob the
 others of a result, and the matrix runs with `fail-fast: false` so one failing version
 doesn't rob the other.
 
@@ -150,6 +151,56 @@ matrix — the snapshot — because that is the only version with the API the su
 boots an API 37 emulator, so it is slower and more failure-prone than the container jobs;
 that is the price of testing ECH at all, and it is why it is a separate workflow whose
 colour doesn't mask the container suites'.
+
+Both workflows write a `run-metadata.json` into their artifact recording which OkHttp
+version they actually resolved, and which run produced it. That is what lets the status site
+name the version under test rather than calling it "pinned", and report two workflows'
+results as one picture.
+
+Status site
+-----------
+
+<https://yschimke.github.io/okhttp-testbed/> — the most recent results per OkHttp version,
+per suite, across both workflows, with the failing assertions in full, a history strip, and
+a topic page per area covered (ECH, DNS, TLS, proxies, virtual threads) linking the relevant
+RFCs and the test servers involved.
+
+The site is `site/`, deployed as it sits: plain HTML and CSS, no static site generator, no
+build step. The only generated files are `site/data/latest.json` and `site/data/history.json`.
+
+`.github/workflows/pages.yml` runs when a `containers` or `android-ech` run finishes on
+`main`. Whichever triggered it, it collects the most recent completed run of *both* — so a
+container run finishing doesn't blank the ECH results, or the reverse — converts the JUnit
+XML with `site/tools/collect_results.py`, and deploys. Results are keyed by OkHttp version,
+so a suite from each workflow testing `5.5.0-SNAPSHOT` lands on one card.
+
+History is not committed: the workflow fetches `data/history.json` back off the deployed
+site, appends the snapshot it just built, and republishes — the deployed site is its own
+datastore, capped at the last 120 entries. A pull request's run is deliberately not
+published; it is about the pull request, not about the state of the repository.
+
+Two distinctions the page depends on, both decided when the XML is collected:
+
+- The Gradle task a suite ran under decides whether a failure is **failing** or a
+  **finding**. `test` failing means this repository is red; `loomTest` failing is a recorded
+  finding about OkHttp, and the page shows it in amber — see below. A suite's task comes
+  from the artifact layout for the container suites, and from `run-metadata.json` for
+  `android-ech`, where the XML is laid out by device rather than by task.
+- The version comes from `run-metadata.json`, so the page names `5.4.0` rather than
+  "pinned".
+
+This needs Pages set to deploy from GitHub Actions — Settings → Pages → Source: GitHub
+Actions — which is a one-time setting on the repository, not something the workflow can do
+for itself. Until it is set, the workflow's deploy step is the only thing that will fail.
+
+To change the site, edit `site/` and push to `main`; a push touching `site/**` redeploys it
+and carries the published results forward. To preview locally, generate some data from a
+directory of downloaded artifacts and serve the folder:
+
+```
+python3 site/tools/collect_results.py --artifacts <downloaded-artifacts> --out site/data
+python3 -m http.server --directory site 8000
+```
 
 Suites that report rather than gate
 -----------------------------------
