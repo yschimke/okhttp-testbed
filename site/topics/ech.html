@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Encrypted Client Hello — OkHttp Testbed</title>
+<meta name="description" content="What the OkHttp testbed covers for Encrypted Client Hello: the specifications, the public test servers, and how a result should be read.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="site-title" href="../">OkHttp Testbed <span>status</span></a>
+    <nav class="site-nav">
+      <a href="../">Status</a>
+      <a href="ech.html" aria-current="page">ECH</a>
+      <a href="dns.html">DNS</a>
+      <a href="tls.html">TLS</a>
+      <a href="proxies.html">Proxies</a>
+      <a href="loom.html">Virtual threads</a>
+      <a href="https://github.com/yschimke/okhttp-testbed">GitHub ↗</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <h1>Encrypted Client Hello</h1>
+  <p class="lede">
+    ECH encrypts the ClientHello — including the SNI and the ALPN list — under a public key the
+    server publishes in DNS. Testing it takes a whole chain rather than a client: a resolver
+    answering <code>HTTPS</code> records, a server holding the keys, and on Android, an emulator
+    new enough to apply a config list. That is more infrastructure than a normal build can carry,
+    which is why it is here.
+  </p>
+
+  <h2>Why it lives here</h2>
+  <p>
+    A ClientHello is only meaningfully encrypted if every link holds: the resolver returns an
+    <code>HTTPS</code> record, the record carries an <code>ech</code> parameter, the TLS stack
+    offers that configuration, and the server accepts it. A test that stubs any of them stops
+    testing the thing that actually breaks. So the suite here runs the resolver and the origin for
+    real, in containers, with the keys deliberately in and out of sync — and the public deployments
+    below stay in the picture as the interoperability check a fixture can't be.
+  </p>
+  <p>
+    ECH also has failure modes that only appear against a live server: a stale configuration earns
+    a <em>retry config</em> from the server, which the client may only use after authenticating the
+    public name against the certificate from the outer handshake, and a server offering no usable
+    retry config securely disables ECH for that attempt. Both paths are tested against servers that
+    deliberately serve stale and mismatched configurations.
+  </p>
+
+  <h2>What runs today</h2>
+  <p>
+    The <code>android-ech</code> suite tests ECH end to end against fixture containers rather than
+    against the internet, so a result is about the client rather than about somebody else's uptime.
+    Two containers stand behind it, both built from one small Go program in
+    <code>ech-fixture</code>: an origin that holds the ECH keys and reports whether the handshake
+    it accepted used ECH, and a DoH resolver answering <code>HTTPS</code> records carrying that
+    origin's config list. Three hostnames give the three outcomes:
+  </p>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Hostname</th><th>Published config</th><th>Expected outcome</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono">green.secret.test</td>
+          <td>The config the origin holds</td>
+          <td>Accepted on the first handshake.</td>
+        </tr>
+        <tr>
+          <td class="mono">retry.secret.test</td>
+          <td>Stale; the origin offers a retry config</td>
+          <td>Rejected, then retried with the origin's config and accepted — still using ECH.</td>
+        </tr>
+        <tr>
+          <td class="mono">disabled.secret.test</td>
+          <td>Stale; the origin offers nothing</td>
+          <td>Falls back to a handshake without ECH rather than failing.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    ECH is applied on Android only — JVM platforms accept the config list and ignore it — so these
+    are instrumentation tests on an API 37 emulator, where
+    <code>android.net.ssl.EchConfigList</code> arrived. The device has no Docker, so the containers
+    run on the host and the device reaches them over <code>adb reverse</code>. The suite tests
+    <code>5.5.0-SNAPSHOT</code> rather than the pinned release because it needs
+    <code>DnsOverHttps.Builder.includeServiceMetadata</code>, and no release has it: 5.4.0 resolves
+    A and AAAA records only, so there is no <code>HTTPS</code> record to carry a config list at all.
+  </p>
+
+  <h2>Specifications</h2>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Document</th><th>Title</th><th>Why it matters here</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono"><a href="https://www.rfc-editor.org/rfc/rfc9849.html">RFC 9849</a></td>
+          <td>TLS Encrypted Client Hello</td>
+          <td>ECH itself. Standards Track, March 2026, from <code>draft-ietf-tls-esni</code>. Retry behaviour is <a href="https://www.rfc-editor.org/rfc/rfc9849.html#section-6.1.6">§6.1.6</a>; authenticating the public name before using a retry config is <a href="https://www.rfc-editor.org/rfc/rfc9849.html#section-6.1.7">§6.1.7</a>.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://www.rfc-editor.org/rfc/rfc9848.html">RFC 9848</a></td>
+          <td>Bootstrapping TLS Encrypted ClientHello with DNS Service Bindings</td>
+          <td>The <code>ech</code> SvcParam: how the configuration reaches the client. OkHttp's <code>Dns.Record</code> exposes it as <code>echConfigList</code>.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://www.rfc-editor.org/rfc/rfc9460.html">RFC 9460</a></td>
+          <td>Service Binding and Parameter Specification via the DNS (SVCB and HTTPS RRs)</td>
+          <td>The record type that carries the ECH configuration, the ALPN list and the address hints.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://www.rfc-editor.org/rfc/rfc9180.html">RFC 9180</a></td>
+          <td>Hybrid Public Key Encryption (HPKE)</td>
+          <td>The construction ECH encrypts the inner ClientHello with.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://www.rfc-editor.org/rfc/rfc8446.html">RFC 8446</a></td>
+          <td>The Transport Layer Security (TLS) Protocol Version 1.3</td>
+          <td>ECH is a TLS 1.3 extension. A connection that negotiates TLS 1.2 cannot carry it — a case the testbed asserts rather than assumes.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://www.rfc-editor.org/rfc/rfc8484.html">RFC 8484</a></td>
+          <td>DNS Queries over HTTPS (DoH)</td>
+          <td>How the testbed fetches HTTPS records portably, via <code>DnsOverHttps</code> with <code>includeServiceMetadata(true)</code>.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://www.rfc-editor.org/rfc/rfc8744.html">RFC 8744</a></td>
+          <td>Issues and Requirements for SNI Encryption in TLS</td>
+          <td>The problem statement ECH answers, and the attacks a naive design fails against.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Public test sites</h2>
+  <p>
+    The fixture covers the protocol; these cover interoperability with real deployments, which a
+    fixture can't. They are servers operated by others, which is why a red result against one is
+    not automatically an OkHttp bug: a site can rotate a key, go down, or change its response text.
+    OkHttp's own Android suite drives them, and they are the first place to check by hand when a
+    fixture result and the real world disagree.
+  </p>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Endpoint</th><th>Operator</th><th>What it exercises</th><th>Success looks like</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono"><a href="https://cloudflare-ech.com/cdn-cgi/trace">cloudflare-ech.com/cdn-cgi/trace</a></td>
+          <td>Cloudflare</td>
+          <td>The straightforward path: HTTPS record with <code>ech</code>, offered and accepted.</td>
+          <td class="mono">sni=encrypted</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://crypto.cloudflare.com/cdn-cgi/trace">crypto.cloudflare.com/cdn-cgi/trace</a></td>
+          <td>Cloudflare</td>
+          <td>The same trace endpoint on a host where ECH is disabled by policy — the client offers, the server declines.</td>
+          <td class="mono">sni=plaintext</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://tls-ech.dev/">tls-ech.dev</a></td>
+          <td>tls-ech.dev</td>
+          <td>Baseline acceptance, with a page that names the server it reached.</td>
+          <td class="mono">You are using ECH</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://stale.tls-ech.dev/">stale.tls-ech.dev</a></td>
+          <td>tls-ech.dev</td>
+          <td>Deliberately stale configuration: the server rejects and returns a retry config, and the connection must succeed on the second route with ECH still in use.</td>
+          <td>Two routes, both with an ECH config, page reports ECH</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://wrong.tls-ech.dev/">wrong.tls-ech.dev</a></td>
+          <td>tls-ech.dev</td>
+          <td>Certificate and hostname handling on the inner name; the page redirects to a port nothing listens on, so the redirect must not be followed blindly.</td>
+          <td>302 with the inner hostname verified</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://tls12.tls-ech.dev/">tls12.tls-ech.dev</a></td>
+          <td>tls-ech.dev</td>
+          <td>TLS 1.2 only. ECH cannot be carried, so the client must fall back cleanly rather than fail.</td>
+          <td>Second route without ECH, page reports no ECH</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://defo.ie/ech-check.php">defo.ie/ech-check.php</a></td>
+          <td><a href="https://defo.ie/">DEfO</a> (OpenSSL ECH)</td>
+          <td>A second, independent implementation — an OpenSSL-based server rather than Cloudflare's stack.</td>
+          <td class="mono">SSL_ECH_STATUS: success</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Reading a result</h2>
+  <p>
+    An ECH failure has three plausible causes, and they are worth separating before filing
+    anything upstream:
+  </p>
+  <ul>
+    <li><strong>The resolver.</strong> No <code>HTTPS</code> record, or one without an
+      <code>ech</code> parameter, means the client never had a configuration to offer. That is a
+      DNS result, not a TLS one — see <a href="dns.html">DNS</a>.</li>
+    <li><strong>The server.</strong> A rotated key, an expired configuration, or a changed page
+      body will fail a test that asserts on text. Check the endpoint by hand first.</li>
+    <li><strong>The client.</strong> A retry loop that does not terminate, a retry config used
+      without authenticating the public name, or a TLS 1.2 fallback that fails instead of
+      degrading. These are the results worth reporting.</li>
+  </ul>
+
+  <p class="note">
+    The <code>android-ech</code> suite has its own workflow and its own daily schedule: it boots an
+    emulator, so it is slower and more failure-prone than the container jobs, and its colour should
+    not mask theirs. Both feed the <a href="../">status page</a>, keyed by the OkHttp version each
+    was testing.
+  </p>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span>OkHttp Testbed — Apache 2.0</span>
+    <a href="https://github.com/yschimke/okhttp-testbed">Repository</a>
+    <a href="https://github.com/square/okhttp">OkHttp</a>
+  </div>
+</footer>
+
+</body>
+</html>

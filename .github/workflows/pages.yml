@@ -1,0 +1,135 @@
+name: pages
+
+# The status site is rebuilt whenever a test run finishes, not on a schedule of its own:
+# the page exists to report the most recent results, and there is nothing new to say until
+# a run completes. Pushes to main rebuild it too, so a change to the site itself ships
+# without waiting for tomorrow's tests.
+on:
+  workflow_run:
+    workflows: [containers, network, android-ech]
+    types: [completed]
+  push:
+    branches:
+      - main
+    paths:
+      - 'site/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  # Reading the test workflows' artifacts.
+  actions: read
+
+# Never two deploys at once, and never cancel one half-done: the deployed site carries the
+# history, so a cancelled deploy would lose whatever it was about to publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  # Every workflow whose results the page reports. Each one's most recent completed run on
+  # main is collected on every build, whichever of them triggered it — a containers run
+  # finishing must not blank the ECH results, or the reverse.
+  TEST_WORKFLOWS: containers.yml network.yml android-ech.yml
+
+jobs:
+  build-and-deploy:
+    # Only runs that report on main get published. A pull request's test run is about the
+    # pull request; it must not overwrite the status of the repository.
+    if: >-
+      github.event_name != 'workflow_run'
+      || (github.event.workflow_run.head_branch == 'main'
+          && github.event.workflow_run.event != 'pull_request'
+          && github.event.workflow_run.conclusion != 'cancelled'
+          && github.event.workflow_run.conclusion != 'skipped')
+
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      # Each test workflow's most recent completed run on main, downloaded into one
+      # directory. The runs are independent and finish hours apart, so the page is always
+      # assembled from several of them; each artifact carries the metadata saying which run
+      # it came from and how old it is.
+      - name: Download Test Results
+        id: download
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          found=false
+          for workflow in $TEST_WORKFLOWS; do
+            run_id=$(gh run list --workflow "$workflow" --branch main --status completed \
+              --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+            if [ -z "$run_id" ]; then
+              echo "no completed $workflow run on main yet"
+              continue
+            fi
+            # A run whose artifacts have expired, or that died before uploading any, is not
+            # a reason to fail the build: the other workflow may still have results.
+            if gh run download "$run_id" --dir artifacts; then
+              echo "collected $workflow run $run_id"
+              found=true
+            else
+              echo "no artifacts on $workflow run $run_id"
+            fi
+          done
+          echo "found=$found" >> "$GITHUB_OUTPUT"
+
+      # The deployed site is its own datastore: the history published last time is fetched
+      # back and appended to, so nothing about it is committed to the repository. A 404 on
+      # the first ever deploy is expected and starts an empty history.
+      - name: Fetch Published History
+        if: steps.download.outputs.found == 'true'
+        run: |
+          curl -fsSL --retry 3 --retry-delay 2 \
+            "${{ steps.pages.outputs.base_url }}/data/history.json" \
+            -o previous-history.json \
+          || echo "no published history yet; starting a new one"
+
+      - name: Collect Results
+        if: steps.download.outputs.found == 'true'
+        run: |
+          python3 site/tools/collect_results.py \
+            --artifacts artifacts \
+            --out site/data \
+            --previous-history previous-history.json \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # Artifacts expire after 30 days, so a site rebuild triggered by a documentation
+      # change can find nothing to collect. Publishing what is already deployed keeps the
+      # status on the page rather than blanking it.
+      - name: Carry Forward Published Results
+        if: steps.download.outputs.found != 'true'
+        run: |
+          mkdir -p site/data
+          for file in latest.json history.json; do
+            curl -fsSL --retry 3 --retry-delay 2 \
+              "${{ steps.pages.outputs.base_url }}/data/$file" \
+              -o "site/data/$file" \
+            || echo "no published $file to carry forward"
+          done
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+      - name: Deploy
+        id: deploy
+        uses: actions/deploy-pages@v4

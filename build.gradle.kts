@@ -1,5 +1,9 @@
+import org.gradle.language.base.plugins.LifecycleBasePlugin
+
 plugins {
   alias(libs.plugins.kotlin.jvm) apply false
+  alias(libs.plugins.android.library) apply false
+  alias(libs.plugins.android.junit5) apply false
 }
 
 val testJavaVersion =
@@ -20,33 +24,15 @@ val forbiddenImports =
     "okio.internal",
   )
 
-// The version of OkHttp under test, shared by every suite. Override to check a release
-// candidate or a snapshot:
-//   ./gradlew test -PokhttpVersion=5.5.0-SNAPSHOT
-val okhttpVersion =
-  providers
-    .gradleProperty("okhttpVersion")
-    .getOrElse(libs.versions.okhttp.get())
-
 subprojects {
-  apply(plugin = "org.jetbrains.kotlin.jvm")
-
-  extra["okhttpVersion"] = okhttpVersion
-
-  // A snapshot has to be re-resolved every run. Gradle caches changing modules for 24 hours,
-  // and the daily job restores the dependency cache from the previous run, so without this a
-  // run can quietly test yesterday's build under today's name — exactly the failure mode a
-  // daily snapshot run exists to avoid. Releases are immutable, so this only applies to
-  // snapshots and leaves the normal build's caching alone.
-  if (okhttpVersion.endsWith("-SNAPSHOT")) {
-    configurations.configureEach {
-      resolutionStrategy.cacheChangingModulesFor(0, "seconds")
-    }
-  }
-
-  configure<JavaPluginExtension> {
-    toolchain {
-      languageVersion.set(JavaLanguageVersion.of(testJavaVersion))
+  // Suites bring their own Kotlin plugin: `android-ech` is an Android module and can't
+  // share one with the JVM suites. Everything below is common to all of them, so it
+  // reacts to whichever plugin the suite applied rather than applying one from here.
+  plugins.withId("org.jetbrains.kotlin.jvm") {
+    configure<JavaPluginExtension> {
+      toolchain {
+        languageVersion.set(JavaLanguageVersion.of(testJavaVersion))
+      }
     }
   }
 
@@ -88,8 +74,10 @@ subprojects {
       }
     }
 
-  tasks.named("check") {
-    dependsOn(checkPublicApiOnly)
+  plugins.withType<LifecycleBasePlugin> {
+    tasks.named("check") {
+      dependsOn(checkPublicApiOnly)
+    }
   }
 
   tasks.withType<Test>().configureEach {
