@@ -1,21 +1,27 @@
 #!/usr/bin/env python3
-"""Turn the JUnit XML the test workflow publishes into the JSON the status site reads.
+"""Turn the JUnit XML the test workflows publish into the JSON the status site reads.
 
-Input is a directory of downloaded artifacts, one per version under test, laid out as the
-`containers` workflow uploads them:
+Input is a directory of downloaded artifacts, one per version per workflow, each carrying
+the `run-metadata.json` its workflow wrote:
 
     <artifacts>/container-test-results-pinned/run-metadata.json
     <artifacts>/container-test-results-pinned/test/TEST-*.xml
     <artifacts>/container-test-results-pinned/loomTest/TEST-*.xml
+    <artifacts>/android-ech-test-results-pinned-snapshot/run-metadata.json
+    <artifacts>/android-ech-test-results-pinned-snapshot/outputs/androidTest-results/…/*.xml
 
 Output is two files:
 
-    <out>/latest.json   the run just finished, with every test case
-    <out>/history.json  a summary per version per run, oldest first, capped
+    <out>/latest.json   the current picture, with every test case
+    <out>/history.json  a summary per collection, oldest first, capped
+
+Results are keyed by the OkHttp version under test, not by workflow: a container suite and
+an Android suite both testing 5.5.0-SNAPSHOT belong on one card, because comparing versions
+is what this repository is for.
 
 The Gradle task a suite ran under decides whether its result gates. `test` failing means
-this repository is red; `loomTest` failing is a recorded finding about OkHttp, which is
-why the build stays green — see "Suites that report rather than gate" in the README.
+this repository is red; `loomTest` failing is a recorded finding about OkHttp, which is why
+the build stays green — see "Suites that report rather than gate" in the README.
 """
 
 from __future__ import annotations
@@ -29,12 +35,12 @@ import xml.etree.ElementTree as ElementTree
 # Gradle test tasks whose failures are findings about OkHttp rather than breakage here.
 REPORTING_TASKS = {"loomTest"}
 
-# How many runs the history keeps. Enough for the trend strip to show a few weeks of
+# How many collections the history keeps. Enough for the trend strip to show a few weeks of
 # daily runs without the file growing without bound.
 HISTORY_LIMIT = 120
 
 
-def parse_suite(path: pathlib.Path, task: str) -> dict:
+def parse_suite(path: pathlib.Path, task: str, workflow: str, run_url: str) -> dict:
     """Read one JUnit XML file into a suite record."""
     root = ElementTree.parse(path).getroot()
     # Gradle writes a single <testsuite> per file, but a <testsuites> wrapper is legal.
@@ -77,6 +83,8 @@ def parse_suite(path: pathlib.Path, task: str) -> dict:
     return {
         "name": simple_name,
         "className": root.get("name", ""),
+        "workflow": workflow,
+        "runUrl": run_url,
         "task": task,
         "reporting": task in REPORTING_TASKS,
         "timeSeconds": float(root.get("time") or 0.0),
@@ -103,53 +111,93 @@ def roll_up(statuses: list[str]) -> str:
     return "unknown"
 
 
-def parse_version(directory: pathlib.Path) -> dict | None:
-    """Read one downloaded artifact directory into a version record."""
-    suites = []
-    for xml in sorted(directory.glob("*/*.xml")) or sorted(directory.glob("*.xml")):
-        task = xml.parent.name if xml.parent != directory else "test"
-        try:
-            suites.append(parse_suite(xml, task))
-        except ElementTree.ParseError as e:
-            print(f"skipping unreadable {xml}: {e}", file=sys.stderr)
-
+def parse_artifact(directory: pathlib.Path) -> dict | None:
+    """Read one downloaded artifact directory: its metadata and every suite in it."""
     metadata_file = directory / "run-metadata.json"
     metadata = json.loads(metadata_file.read_text()) if metadata_file.exists() else {}
 
-    # Fall back to the artifact name when a run predates run-metadata.json.
-    label = metadata.get("label") or directory.name.replace("container-test-results-", "")
+    workflow = metadata.get("workflow", "unknown")
+    run_url = metadata.get("runUrl", "")
+
+    # The container workflow lays its XML out by Gradle task, which is the distinction the
+    # page needs. The Android suite lays it out by device instead, so its task comes from
+    # the metadata rather than from the path.
+    default_task = metadata.get("task", "test")
+    task_from_path = metadata.get("taskFromPath", False)
+
+    suites = []
+    for xml in sorted(directory.rglob("*.xml")):
+        task = xml.parent.name if task_from_path and xml.parent != directory else default_task
+        try:
+            suites.append(parse_suite(xml, task, workflow, run_url))
+        except ElementTree.ParseError as e:
+            print(f"skipping unreadable {xml}: {e}", file=sys.stderr)
 
     if not suites and not metadata:
         return None
 
-    suites.sort(key=lambda s: (s["reporting"], s["name"]))
+    # Fall back to the artifact name when a run predates run-metadata.json.
+    label = metadata.get("label") or directory.name.split("test-results-")[-1]
+
     return {
+        "workflow": workflow,
         "label": label,
         "okhttpVersion": metadata.get("okhttpVersion", label),
         "javaVersion": metadata.get("javaVersion", ""),
         "jobStatus": metadata.get("jobStatus", ""),
-        "status": roll_up([suite_status(s) for s in suites]),
-        "passed": sum(s["passed"] for s in suites),
-        "failed": sum(s["failed"] for s in suites),
-        "skipped": sum(s["skipped"] for s in suites),
-        "timeSeconds": round(sum(s["timeSeconds"] for s in suites), 1),
+        "runNumber": metadata.get("runNumber", 0),
+        "runUrl": run_url,
+        "commit": metadata.get("commit", ""),
+        "event": metadata.get("event", ""),
+        "finishedAt": metadata.get("finishedAt", ""),
         "suites": suites,
     }
 
 
-def summarise(run: dict) -> dict:
+def group_by_version(artifacts: list[dict]) -> list[dict]:
+    """Merge every artifact's suites under the OkHttp version it was testing."""
+    versions: dict[str, dict] = {}
+    for artifact in artifacts:
+        version = versions.setdefault(
+            artifact["okhttpVersion"],
+            {
+                "okhttpVersion": artifact["okhttpVersion"],
+                "label": artifact["label"],
+                "javaVersion": artifact["javaVersion"],
+                "workflows": [],
+                "suites": [],
+            },
+        )
+        if artifact["workflow"] not in version["workflows"]:
+            version["workflows"].append(artifact["workflow"])
+        version["suites"].extend(artifact["suites"])
+
+    for version in versions.values():
+        suites = version["suites"]
+        # Gating suites first, then findings, alphabetically within each.
+        suites.sort(key=lambda s: (s["reporting"], s["name"]))
+        version["status"] = roll_up([suite_status(s) for s in suites])
+        version["passed"] = sum(s["passed"] for s in suites)
+        version["failed"] = sum(s["failed"] for s in suites)
+        version["skipped"] = sum(s["skipped"] for s in suites)
+        version["timeSeconds"] = round(sum(s["timeSeconds"] for s in suites), 1)
+
+    # The pinned release first, then snapshots, so the page reads release-to-snapshot.
+    return sorted(
+        versions.values(),
+        key=lambda v: ("SNAPSHOT" in v["okhttpVersion"], v["okhttpVersion"]),
+    )
+
+
+def summarise(snapshot: dict) -> dict:
     """The compact form kept in history: counts and per-suite status, no case detail."""
     return {
-        "runId": run["runId"],
-        "runNumber": run["runNumber"],
-        "commit": run["commit"],
-        "finishedAt": run["finishedAt"],
-        "runUrl": run["runUrl"],
-        "event": run["event"],
-        "status": run["status"],
+        "key": snapshot["key"],
+        "collectedFrom": snapshot["collectedFrom"],
+        "finishedAt": snapshot["finishedAt"],
+        "status": snapshot["status"],
         "versions": [
             {
-                "label": v["label"],
                 "okhttpVersion": v["okhttpVersion"],
                 "status": v["status"],
                 "passed": v["passed"],
@@ -157,7 +205,7 @@ def summarise(run: dict) -> dict:
                 "skipped": v["skipped"],
                 "suites": {s["name"]: suite_status(s) for s in v["suites"]},
             }
-            for v in run["versions"]
+            for v in snapshot["versions"]
         ],
     }
 
@@ -171,34 +219,44 @@ def main() -> int:
         type=pathlib.Path,
         help="history.json from the deployed site, if it could be fetched",
     )
-    parser.add_argument("--run-id", default="")
-    parser.add_argument("--run-number", default="0")
-    parser.add_argument("--run-url", default="")
-    parser.add_argument("--commit", default="")
-    parser.add_argument("--event", default="")
-    parser.add_argument("--finished-at", default="")
     args = parser.parse_args()
 
-    versions = []
+    artifacts = []
     for directory in sorted(p for p in args.artifacts.iterdir() if p.is_dir()):
-        version = parse_version(directory)
-        if version:
-            versions.append(version)
+        artifact = parse_artifact(directory)
+        if artifact:
+            artifacts.append(artifact)
 
-    if not versions:
+    if not artifacts:
         print(f"no test results under {args.artifacts}", file=sys.stderr)
         return 1
 
-    # The pinned release first, then snapshots, so the page reads release-to-snapshot.
-    versions.sort(key=lambda v: ("SNAPSHOT" in v["okhttpVersion"], v["label"]))
+    versions = group_by_version(artifacts)
 
-    run = {
-        "runId": args.run_id,
-        "runNumber": int(args.run_number or 0),
-        "runUrl": args.run_url,
-        "commit": args.commit,
-        "event": args.event,
-        "finishedAt": args.finished_at,
+    # One entry per workflow that contributed, so the page can say where each half of the
+    # picture came from and how old it is.
+    collected_from = []
+    for artifact in artifacts:
+        if any(r["runUrl"] == artifact["runUrl"] for r in collected_from):
+            continue
+        collected_from.append(
+            {
+                "workflow": artifact["workflow"],
+                "runNumber": artifact["runNumber"],
+                "runUrl": artifact["runUrl"],
+                "commit": artifact["commit"],
+                "event": artifact["event"],
+                "finishedAt": artifact["finishedAt"],
+            }
+        )
+    collected_from.sort(key=lambda r: r["workflow"])
+
+    snapshot = {
+        # Identifies this combination of runs, so republishing the same one replaces its
+        # history entry rather than adding a second.
+        "key": "+".join(f"{r['workflow']}#{r['runNumber']}" for r in collected_from),
+        "collectedFrom": collected_from,
+        "finishedAt": max((r["finishedAt"] for r in collected_from), default=""),
         "status": roll_up([v["status"] for v in versions]),
         "versions": versions,
     }
@@ -210,16 +268,18 @@ def main() -> int:
         except json.JSONDecodeError as e:
             print(f"ignoring unreadable history: {e}", file=sys.stderr)
 
-    # A re-run of the same workflow run replaces its entry rather than adding one.
-    history = [r for r in history if r.get("runId") != run["runId"]]
-    history.append(summarise(run))
+    history = [r for r in history if r.get("key") != snapshot["key"]]
+    history.append(summarise(snapshot))
     history = history[-HISTORY_LIMIT:]
 
     args.out.mkdir(parents=True, exist_ok=True)
-    (args.out / "latest.json").write_text(json.dumps(run, indent=2) + "\n")
+    (args.out / "latest.json").write_text(json.dumps(snapshot, indent=2) + "\n")
     (args.out / "history.json").write_text(json.dumps({"runs": history}, indent=2) + "\n")
 
-    print(f"{len(versions)} version(s), {len(history)} run(s) of history, status {run['status']}")
+    print(
+        f"{len(versions)} version(s) from {len(collected_from)} run(s), "
+        f"{len(history)} entries of history, status {snapshot['status']}"
+    )
     return 0
 
 

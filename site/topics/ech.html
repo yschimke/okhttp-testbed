@@ -30,19 +30,20 @@
   <h1>Encrypted Client Hello</h1>
   <p class="lede">
     ECH encrypts the ClientHello — including the SNI and the ALPN list — under a public key the
-    server publishes in DNS. It is the one feature in OkHttp that cannot be tested against a
-    server we start ourselves: it needs real DNS, a real resolver that returns HTTPS records, and
-    servers other people operate.
+    server publishes in DNS. Testing it takes a whole chain rather than a client: a resolver
+    answering <code>HTTPS</code> records, a server holding the keys, and on Android, an emulator
+    new enough to apply a config list. That is more infrastructure than a normal build can carry,
+    which is why it is here.
   </p>
 
   <h2>Why it lives here</h2>
   <p>
-    A ClientHello is only meaningfully encrypted if the whole chain works end to end: the resolver
-    returns an <code>HTTPS</code> record, the record carries an <code>ech</code> parameter, the TLS
-    stack offers that configuration, and the server accepts it. Every link is outside the client's
-    control, and the configurations rotate — Cloudflare publishes one at a time and rotates it
-    hourly, honouring the previous one for a further four hours. That is a moving target no unit
-    test can stand in for, and exactly the kind of thing this repository exists to watch daily.
+    A ClientHello is only meaningfully encrypted if every link holds: the resolver returns an
+    <code>HTTPS</code> record, the record carries an <code>ech</code> parameter, the TLS stack
+    offers that configuration, and the server accepts it. A test that stubs any of them stops
+    testing the thing that actually breaks. So the suite here runs the resolver and the origin for
+    real, in containers, with the keys deliberately in and out of sync — and the public deployments
+    below stay in the picture as the interoperability check a fixture can't be.
   </p>
   <p>
     ECH also has failure modes that only appear against a live server: a stale configuration earns
@@ -50,6 +51,49 @@
     public name against the certificate from the outer handshake, and a server offering no usable
     retry config securely disables ECH for that attempt. Both paths are tested against servers that
     deliberately serve stale and mismatched configurations.
+  </p>
+
+  <h2>What runs today</h2>
+  <p>
+    The <code>android-ech</code> suite tests ECH end to end against fixture containers rather than
+    against the internet, so a result is about the client rather than about somebody else's uptime.
+    Two containers stand behind it, both built from one small Go program in
+    <code>ech-fixture</code>: an origin that holds the ECH keys and reports whether the handshake
+    it accepted used ECH, and a DoH resolver answering <code>HTTPS</code> records carrying that
+    origin's config list. Three hostnames give the three outcomes:
+  </p>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Hostname</th><th>Published config</th><th>Expected outcome</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono">green.secret.test</td>
+          <td>The config the origin holds</td>
+          <td>Accepted on the first handshake.</td>
+        </tr>
+        <tr>
+          <td class="mono">retry.secret.test</td>
+          <td>Stale; the origin offers a retry config</td>
+          <td>Rejected, then retried with the origin's config and accepted — still using ECH.</td>
+        </tr>
+        <tr>
+          <td class="mono">disabled.secret.test</td>
+          <td>Stale; the origin offers nothing</td>
+          <td>Falls back to a handshake without ECH rather than failing.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    ECH is applied on Android only — JVM platforms accept the config list and ignore it — so these
+    are instrumentation tests on an API 37 emulator, where
+    <code>android.net.ssl.EchConfigList</code> arrived. The device has no Docker, so the containers
+    run on the host and the device reaches them over <code>adb reverse</code>. The suite tests
+    <code>5.5.0-SNAPSHOT</code> rather than the pinned release because it needs
+    <code>DnsOverHttps.Builder.includeServiceMetadata</code>, and no release has it: 5.4.0 resolves
+    A and AAAA records only, so there is no <code>HTTPS</code> record to carry a config list at all.
   </p>
 
   <h2>Specifications</h2>
@@ -98,10 +142,13 @@
     </table>
   </div>
 
-  <h2>Test sites</h2>
+  <h2>Public test sites</h2>
   <p>
-    These are public servers operated by others. They are the reason a red result here is not
-    automatically an OkHttp bug: a site can rotate a key, go down, or change its response text.
+    The fixture covers the protocol; these cover interoperability with real deployments, which a
+    fixture can't. They are servers operated by others, which is why a red result against one is
+    not automatically an OkHttp bug: a site can rotate a key, go down, or change its response text.
+    OkHttp's own Android suite drives them, and they are the first place to check by hand when a
+    fixture result and the real world disagree.
   </p>
   <div class="table-scroll">
     <table>
@@ -172,10 +219,10 @@
   </ul>
 
   <p class="note">
-    ECH coverage in OkHttp is currently exercised by the Android instrumentation suite, which needs
-    a platform TLS stack that implements it. The container and network suites in this repository
-    are where the JVM-side coverage will land as it becomes runnable off-device; the status page
-    will show those suites as soon as they exist.
+    The <code>android-ech</code> suite has its own workflow and its own daily schedule: it boots an
+    emulator, so it is slower and more failure-prone than the container jobs, and its colour should
+    not mask theirs. Both feed the <a href="../">status page</a>, keyed by the OkHttp version each
+    was testing.
   </p>
 
 </main>

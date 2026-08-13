@@ -1,4 +1,7 @@
 [versions]
+agp = "9.1.1"
+android-junit5 = "2.0.1"
+androidx-test-runner = "1.7.0"
 assertk = "0.28.1"
 junit-platform = "1.14.4"
 kotlin = "2.2.21"
@@ -6,15 +9,22 @@ kotlin = "2.2.21"
 # server whose major.minor differs. Injected into the tests as mockserver.version.
 mockserver = "7.4.0"
 okhttp = "5.4.0"
+# The ECH suite needs DnsOverHttps.Builder.includeServiceMetadata, which no release has
+# yet: 5.4.0 resolves A and AAAA records only, so there is no HTTPS record to carry an
+# ECH config list. Drop this back to `okhttp` once a release ships it.
+ech-okhttp = "5.5.0-SNAPSHOT"
 org-junit-jupiter = "5.13.4"
 testcontainers = "1.21.4"
 
 [libraries]
+androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidx-test-runner" }
 assertk = { module = "com.willowtreeapps.assertk:assertk", version.ref = "assertk" }
 junit-jupiter-api = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "org-junit-jupiter" }
 junit-jupiter-engine = { module = "org.junit.jupiter:junit-jupiter-engine", version.ref = "org-junit-jupiter" }
 junit-jupiter-params = { module = "org.junit.jupiter:junit-jupiter-params", version.ref = "org-junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junit-platform" }
+junit5android-core = { module = "de.mannodermaus.junit5:android-test-core", version.ref = "android-junit5" }
+junit5android-runner = { module = "de.mannodermaus.junit5:android-test-runner", version.ref = "android-junit5" }
 mockserver = { module = "org.testcontainers:mockserver", version.ref = "testcontainers" }
 mockserver-client = { module = "org.mock-server:mockserver-client-java-no-dependencies", version.ref = "mockserver" }
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
@@ -22,4 +32,6 @@ testcontainers = { module = "org.testcontainers:testcontainers", version.ref = "
 testcontainers-junit5 = { module = "org.testcontainers:junit-jupiter", version.ref = "testcontainers" }
 
 [plugins]
+android-junit5 = { id = "de.mannodermaus.android-junit5", version.ref = "android-junit5" }
+android-library = { id = "com.android.library", version.ref = "agp" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

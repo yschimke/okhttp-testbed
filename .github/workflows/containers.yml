@@ -82,10 +82,17 @@ jobs:
           mkdir -p containers/build/test-results
           cat > containers/build/test-results/run-metadata.json <<JSON
           {
+            "workflow": "containers",
             "label": "${{ matrix.okhttpVersion || 'pinned' }}",
             "okhttpVersion": "$version",
             "javaVersion": "21",
-            "jobStatus": "${{ job.status }}"
+            "jobStatus": "${{ job.status }}",
+            "runNumber": ${{ github.run_number }},
+            "runUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+            "commit": "${{ github.sha }}",
+            "event": "${{ github.event_name }}",
+            "finishedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "taskFromPath": true
           }
           JSON
 

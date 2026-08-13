@@ -1,12 +1,13 @@
 /*
  * Renders the status page from the JSON the pages workflow generates.
  *
- * data/latest.json  the most recent run, with every test case
- * data/history.json one summary per run, oldest first
+ * data/latest.json  the current picture, with every test case
+ * data/history.json one summary per collection, oldest first
  *
- * Both are written by site/tools/collect_results.py. Everything here is presentation:
- * the pass/fail/finding distinction is decided at collection time, because it depends on
- * which Gradle task ran the suite.
+ * Both are written by site/tools/collect_results.py, from the most recent run of each test
+ * workflow. Everything here is presentation: the pass/fail/finding distinction is decided
+ * at collection time, because it depends on which Gradle task ran the suite, and results
+ * are keyed by OkHttp version there too, because that is the comparison being made.
  */
 
 const STATUS_TEXT = {
@@ -42,28 +43,25 @@ function formatWhen(iso) {
   return `${then.toISOString().replace("T", " ").slice(0, 16)} UTC (${relative})`;
 }
 
-function renderSummary(run) {
-  const target = document.getElementById("run-summary");
-  target.replaceChildren(
-    pill(run.status),
+function renderSummary(snapshot) {
+  // One line per workflow that contributed. They finish at different times — the container
+  // suites daily, the emulator suite an hour later — so the page says how old each half of
+  // the picture is rather than pretending there was a single run.
+  const runs = snapshot.collectedFrom.map((run) =>
     el("span", {}, [
-      el("strong", { textContent: `Run #${run.runNumber || "?"}` }),
-      ` · ${formatWhen(run.finishedAt)}`,
+      el("strong", { className: "mono", textContent: run.workflow }),
+      ` #${run.runNumber || "?"} · ${formatWhen(run.finishedAt)}`,
+      run.event ? ` · ${run.event}` : "",
+      " ",
+      run.runUrl ? el("a", { href: run.runUrl, textContent: "run ↗" }) : null,
     ]),
-    run.event ? el("span", { textContent: `triggered by ${run.event}` }) : null,
-    run.commit
-      ? el("a", {
-          className: "mono",
-          href: `https://github.com/yschimke/okhttp-testbed/commit/${run.commit}`,
-          textContent: run.commit.slice(0, 7),
-        })
-      : null,
-    run.runUrl ? el("a", { href: run.runUrl, textContent: "workflow run ↗" }) : null,
   );
+
+  document.getElementById("run-summary").replaceChildren(pill(snapshot.status), ...runs);
 }
 
-function renderVersionCards(run) {
-  const cards = run.versions.map((version) => {
+function renderVersionCards(snapshot) {
+  const cards = snapshot.versions.map((version) => {
     const counts = el("div", { className: "counts" }, [
       el("div", {}, [
         el("div", { className: "n-passed", textContent: version.passed }),
@@ -87,8 +85,7 @@ function renderVersionCards(run) {
       el("div", {
         className: "card-label",
         textContent:
-          `${version.label === "pinned" ? "pinned release" : version.label}` +
-          (version.javaVersion ? ` · JDK ${version.javaVersion}` : "") +
+          version.workflows.join(", ") +
           ` · ${plural(version.suites.length, "suite")} in ${version.timeSeconds}s`,
       }),
       counts,
@@ -98,14 +95,15 @@ function renderVersionCards(run) {
   document.getElementById("version-cards").replaceChildren(...cards);
 }
 
-function renderSuiteTable(run) {
-  const versions = run.versions;
+function renderSuiteTable(snapshot) {
+  const versions = snapshot.versions;
   const suiteNames = [
     ...new Set(versions.flatMap((v) => v.suites.map((s) => s.name))),
   ].sort();
 
   const head = el("tr", {}, [
     el("th", { textContent: "Suite" }),
+    el("th", { textContent: "Workflow" }),
     el("th", { textContent: "Gradle task" }),
     ...versions.map((v) => el("th", { textContent: v.okhttpVersion })),
   ]);
@@ -114,6 +112,7 @@ function renderSuiteTable(run) {
     const any = versions.flatMap((v) => v.suites).find((s) => s.name === name);
     return el("tr", {}, [
       el("td", { className: "suite", textContent: name }),
+      el("td", { className: "mono", textContent: any ? any.workflow : "" }),
       el("td", { className: "mono", textContent: any ? any.task : "" }),
       ...versions.map((version) => {
         const suite = version.suites.find((s) => s.name === name);
@@ -138,9 +137,9 @@ function renderSuiteTable(run) {
   );
 }
 
-function renderFailures(run) {
+function renderFailures(snapshot) {
   const items = [];
-  for (const version of run.versions) {
+  for (const version of snapshot.versions) {
     for (const suite of version.suites) {
       for (const testCase of suite.cases) {
         if (testCase.status !== "failed") continue;
@@ -173,22 +172,26 @@ function renderFailures(run) {
 }
 
 function renderHistory(history) {
-  const runs = history.runs || [];
-  const labels = [...new Set(runs.flatMap((r) => r.versions.map((v) => v.label)))];
+  const entries = history.runs || [];
+  const okhttpVersions = [
+    ...new Set(entries.flatMap((e) => e.versions.map((v) => v.okhttpVersion))),
+  ];
 
-  const rows = labels.map((label) => {
-    const blocks = runs.map((run) => {
-      const version = run.versions.find((v) => v.label === label);
+  const rows = okhttpVersions.map((okhttpVersion) => {
+    const blocks = entries.map((entry) => {
+      const version = entry.versions.find((v) => v.okhttpVersion === okhttpVersion);
       const status = version ? version.status : "unknown";
+      const when = (entry.finishedAt || "").slice(0, 10);
       const title = version
-        ? `#${run.runNumber} ${version.okhttpVersion}: ${STATUS_TEXT[status]} — ` +
+        ? `${when} ${okhttpVersion}: ${STATUS_TEXT[status]} — ` +
           `${version.passed} passed, ${version.failed} failed`
-        : `#${run.runNumber}: not run`;
-      return el("a", { className: `${status}`, href: run.runUrl || "#", title });
+        : `${when} ${okhttpVersion}: not tested`;
+      const source = (entry.collectedFrom || [])[0];
+      return el("a", { className: `${status}`, href: source ? source.runUrl : "#", title });
     });
 
     return el("div", { className: "history-row" }, [
-      el("span", { className: "history-label", textContent: label === "pinned" ? "pinned release" : label }),
+      el("span", { className: "history-label", textContent: okhttpVersion }),
       el("div", { className: "history-strip" }, blocks),
     ]);
   });
@@ -209,11 +212,11 @@ async function loadJson(path) {
 
 (async () => {
   try {
-    const run = await loadJson("data/latest.json");
-    renderSummary(run);
-    renderVersionCards(run);
-    renderSuiteTable(run);
-    renderFailures(run);
+    const snapshot = await loadJson("data/latest.json");
+    renderSummary(snapshot);
+    renderVersionCards(snapshot);
+    renderSuiteTable(snapshot);
+    renderFailures(snapshot);
   } catch (e) {
     document.getElementById("run-summary").replaceChildren(
       el("span", {}, [

@@ -1,0 +1,115 @@
+name: android-ech
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  schedule:
+    # Daily, an hour after the container suites, so a regression in the snapshot's ECH or
+    # DoH handling shows up without anyone pushing to this repo.
+    - cron: '47 7 * * *'
+  workflow_dispatch:
+    inputs:
+      okhttpVersion:
+        description: 'OkHttp version under test (e.g. 5.5.0-SNAPSHOT)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false -Dkotlin.incremental=false"
+  # Empty means the version pinned as ech-okhttp in libs.versions.toml, which is the
+  # snapshot: ECH needs DnsOverHttps.includeServiceMetadata, and no release has it yet.
+  OKHTTP_VERSION: ${{ inputs.okhttpVersion || '' }}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-ech:
+    name: android-ech (${{ inputs.okhttpVersion || 'pinned snapshot' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Configure JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Enable KVM group permissions
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # API 37 is the emulator this suite needs: ECH is applied by OkHttp's Android platform
+      # through android.net.ssl.EchConfigList, which arrived there.
+      - name: Run the ECH suite against the fixture containers
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: '37.0'
+          target: google_apis_playstore_ps16k
+          arch: x86_64
+          disable-animations: true
+          emulator-options: >-
+            -no-window
+            -gpu swiftshader_indirect
+            -noaudio
+            -no-boot-anim
+            -camera-back none
+            -memory 2048
+          script: android-ech/run-ech-test.sh
+
+      # What the XML can't say: which OkHttp version this resolved to, and which run
+      # produced it. The status page reports both workflows as one picture, keyed by the
+      # version under test, so each artifact has to identify itself.
+      #
+      # Unlike the container suites, this XML is laid out by device rather than by Gradle
+      # task, so the task is named here instead of being read off the path.
+      - name: Record Run Metadata
+        if: always()
+        run: |
+          version='${{ inputs.okhttpVersion }}'
+          if [ -z "$version" ]; then
+            version=$(sed -n 's/^ech-okhttp = "\(.*\)"$/\1/p' gradle/libs.versions.toml)
+          fi
+          mkdir -p android-ech/build
+          cat > android-ech/build/run-metadata.json <<JSON
+          {
+            "workflow": "android-ech",
+            "label": "${{ inputs.okhttpVersion || 'pinned-snapshot' }}",
+            "okhttpVersion": "$version",
+            "javaVersion": "21",
+            "jobStatus": "${{ job.status }}",
+            "runNumber": ${{ github.run_number }},
+            "runUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+            "commit": "${{ github.sha }}",
+            "event": "${{ github.event_name }}",
+            "finishedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "task": "connectedAndroidTest"
+          }
+          JSON
+
+      # The suite's XML, for the status page, whatever colour the job ended up.
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-ech-test-results-${{ inputs.okhttpVersion || 'pinned-snapshot' }}
+          path: |
+            android-ech/build/run-metadata.json
+            android-ech/build/outputs/androidTest-results/connected/**/*.xml
+            android-ech/build/reports/androidTests/connected/
+          retention-days: 30
