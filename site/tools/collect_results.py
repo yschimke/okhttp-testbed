@@ -247,6 +247,11 @@ def main() -> int:
                 "commit": artifact["commit"],
                 "event": artifact["event"],
                 "finishedAt": artifact["finishedAt"],
+                # A job can fail before its tests produce any XML at all — an emulator that
+                # never boots, a container daemon that never starts. Saying so is more
+                # honest than a card with no suites and no explanation.
+                "jobStatus": artifact["jobStatus"],
+                "suiteCount": len(artifact["suites"]),
             }
         )
     collected_from.sort(key=lambda r: r["workflow"])

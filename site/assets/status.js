@@ -52,6 +52,8 @@ function renderSummary(snapshot) {
       el("strong", { className: "mono", textContent: run.workflow }),
       ` #${run.runNumber || "?"} · ${formatWhen(run.finishedAt)}`,
       run.event ? ` · ${run.event}` : "",
+      // A run that uploaded no results at all: the job died before its tests could report.
+      run.suiteCount === 0 ? ` · no results (job ${run.jobStatus || "failed"})` : "",
       " ",
       run.runUrl ? el("a", { href: run.runUrl, textContent: "run ↗" }) : null,
     ]),
