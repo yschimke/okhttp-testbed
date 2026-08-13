@@ -24,7 +24,30 @@ env:
 
 jobs:
   containers:
+    name: containers (${{ matrix.okhttpVersion || 'pinned release' }})
     runs-on: ubuntu-latest
+
+    strategy:
+      # Each version reports independently. One version failing must not cancel the
+      # other's run, because the difference between them is the result we're after.
+      fail-fast: false
+      matrix:
+        # An empty entry means the release pinned in libs.versions.toml.
+        #
+        # Push and pull request runs are about this repository, so they test that one
+        # version. The scheduled and manual runs add the current snapshot: catching a
+        # regression in an unreleased OkHttp before it ships is the point of running
+        # daily against published artifacts. Bump the snapshot when OkHttp's main
+        # branch moves to the next version.
+        #
+        # An explicit workflow_dispatch input overrides both and tests only what was asked for.
+        okhttpVersion: >-
+          ${{ fromJSON(
+            inputs.okhttpVersion && format('["{0}"]', inputs.okhttpVersion)
+            || ((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+                && '["", "5.5.0-SNAPSHOT"]')
+            || '[""]'
+          ) }}
 
     steps:
       - name: Checkout
@@ -44,7 +67,7 @@ jobs:
         # every suite should report every run, whatever the others did.
         run: >
           ./gradlew containers:test containers:loomTest --continue
-          ${{ inputs.okhttpVersion && format('-PokhttpVersion={0}', inputs.okhttpVersion) || '' }}
+          ${{ matrix.okhttpVersion && format('-PokhttpVersion={0}', matrix.okhttpVersion) || '' }}
 
       # Both tasks' XML, including loomTest's, which records findings without failing
       # the build. The status page reads results from here, not from the job's colour.
@@ -52,6 +75,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: container-test-results
+          name: container-test-results-${{ matrix.okhttpVersion || 'pinned' }}
           path: containers/build/test-results/*/*.xml
           retention-days: 30

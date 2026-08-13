@@ -71,9 +71,31 @@ The `containers` workflow runs on push, on pull requests, and daily. The daily r
 point: it catches breakage that arrives from outside this repository — a container image
 that moved, a proxy that changed behaviour, a regression in a published OkHttp.
 
-JUnit XML results are uploaded as artifacts on every run — from both `test` and `loomTest`
-— which is what the status page will be built from. The job runs with `--continue` so one
-failing suite doesn't rob the others of a result.
+The daily run covers two versions, as separate jobs:
+
+| Job                              | Version                              | Runs on                       |
+|----------------------------------|--------------------------------------|-------------------------------|
+| `containers (pinned release)`    | the `okhttp` version in `libs.versions.toml` | every event            |
+| `containers (5.5.0-SNAPSHOT)`    | the current snapshot                 | schedule and manual runs only |
+
+Push and pull request runs test one version, because those runs are about this repository.
+The snapshot job is what makes the daily schedule worth having: a regression in OkHttp's
+main branch shows up here before it reaches a release, which is only possible because the
+suites use the public API and so need no changes to run against an unreleased build.
+A `workflow_dispatch` run with an explicit `okhttpVersion` overrides both and tests only
+that version.
+
+When OkHttp's main branch moves past 5.5.0, bump the snapshot version in the workflow's
+matrix. Snapshot runs re-resolve the artifact every time — `containers/build.gradle.kts`
+sets `cacheChangingModulesFor(0, "seconds")` for `-SNAPSHOT` versions, since Gradle
+otherwise caches a changing module for 24 hours and a daily job would test yesterday's
+build under today's name.
+
+JUnit XML results are uploaded as artifacts on every run — from both `test` and `loomTest`,
+for each version, as `container-test-results-<version>` — which is what the status page
+will be built from. The job runs with `--continue` so one failing suite doesn't rob the
+others of a result, and the matrix runs with `fail-fast: false` so one failing version
+doesn't rob the other.
 
 Suites that report rather than gate
 -----------------------------------
