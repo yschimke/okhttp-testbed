@@ -16,9 +16,10 @@ Suites
 |---------------|-----------------------------|---------------------------------------------------------------------|
 | `containers`  | Docker                      | SOCKS5 and HTTP proxies, TLS via MockServer, virtual threads (Loom)  |
 | `android-ech` | Docker, an API 37 emulator  | Encrypted Client Hello over DoH: accepted, retried, and declined     |
+| `network`     | Outbound network            | Public HTTP, TLS and DNS test servers — reports, never gates         |
 
-More suites are planned — notably network tests against external IETF and vendor test
-servers, and the rest of the Android device matrix.
+More is planned for `network` — the HTTP-semantics, badssl and DoH matrices — and for the
+rest of the Android device matrix.
 
 Public API only
 ---------------
@@ -56,6 +57,16 @@ Requires Docker and JDK 21+.
 `test` covers the container suites and fails the build. `loomTest` runs `BasicLoomTest`
 separately with `ignoreFailures`, because that suite reports on OkHttp rather than on this
 repository — see [Suites that report rather than gate](#suites-that-report-rather-than-gate).
+
+The `network` suite needs no Docker, only outbound network:
+
+```
+./gradlew network:networkTest
+```
+
+Everything in it reaches a server someone else operates, so all of it runs under
+`ignoreFailures` — the module's `test` task is disabled and `networkTest` is the only way
+to run it.
 
 By default this tests the OkHttp version pinned in `gradle/libs.versions.toml`. To test
 another release, a release candidate, or a snapshot:
@@ -152,7 +163,14 @@ boots an API 37 emulator, so it is slower and more failure-prone than the contai
 that is the price of testing ECH at all, and it is why it is a separate workflow whose
 colour doesn't mask the container suites'.
 
-Both workflows write a `run-metadata.json` into their artifact recording which OkHttp
+The `network` workflow runs on the same events and its own daily schedule, on a plain
+runner with no Docker — what it needs instead is outbound network, which is the one thing
+the container jobs can take for granted and it cannot. It runs the same two-version matrix
+as `containers` and uploads `network-test-results-<version>`. Its `networkTest` task carries
+`ignoreFailures`, so a job that reaches an unreachable server still finishes green and the
+failure lands on the status page as a finding.
+
+All three workflows write a `run-metadata.json` into their artifact recording which OkHttp
 version they actually resolved, and which run produced it. That is what lets the status site
 name the version under test rather than calling it "pinned", and report two workflows'
 results as one picture.
@@ -168,9 +186,10 @@ RFCs and the test servers involved.
 The site is `site/`, deployed as it sits: plain HTML and CSS, no static site generator, no
 build step. The only generated files are `site/data/latest.json` and `site/data/history.json`.
 
-`.github/workflows/pages.yml` runs when a `containers` or `android-ech` run finishes on
-`main`. Whichever triggered it, it collects the most recent completed run of *both* — so a
-container run finishing doesn't blank the ECH results, or the reverse — converts the JUnit
+`.github/workflows/pages.yml` runs when a `containers`, `android-ech` or `network` run
+finishes on `main`. Whichever triggered it, it collects the most recent completed run of
+*all* of them — so a container run finishing doesn't blank the ECH results, or the reverse —
+converts the JUnit
 XML with `site/tools/collect_results.py`, and deploys. Results are keyed by OkHttp version,
 so a suite from each workflow testing `5.5.0-SNAPSHOT` lands on one card.
 
@@ -182,9 +201,10 @@ published; it is about the pull request, not about the state of the repository.
 Two distinctions the page depends on, both decided when the XML is collected:
 
 - The Gradle task a suite ran under decides whether a failure is **failing** or a
-  **finding**. `test` failing means this repository is red; `loomTest` failing is a recorded
-  finding about OkHttp, and the page shows it in amber — see below. A suite's task comes
-  from the artifact layout for the container suites, and from `run-metadata.json` for
+  **finding**. `test` failing means this repository is red; `loomTest` and `networkTest`
+  failing are recorded findings — about OkHttp, or about a server someone else operates —
+  and the page shows them in amber, see below. A suite's task comes
+  from the artifact layout for the container and network suites, and from `run-metadata.json` for
   `android-ech`, where the XML is laid out by device rather than by task.
 - The version comes from `run-metadata.json`, so the page names `5.4.0` rather than
   "pinned".
@@ -210,7 +230,13 @@ not a broken test, and it shouldn't read as this repository being red — so tho
 under `ignoreFailures`: the assertion stays exactly as written, the failure lands in the
 JUnit XML for the status page, and the build stays green.
 
-Only `loomTest` is in this category today. `BasicLoomTest.testHttpsRequest` asserts that no
+Two things are in this category. The whole `network` module is one of them, for a different
+reason than the rest: its tests are about servers this repository doesn't operate, and a rate
+limit at a CDN or a certificate renewed overnight is not this repository being red. Its
+`test` task is disabled and every test runs under `networkTest`, so a suite cannot end up in
+the fatal category there by being written in the wrong file.
+
+The other is `loomTest`. `BasicLoomTest.testHttpsRequest` asserts that no
 virtual thread pins its carrier, and against OkHttp 5.4.0 on JDK 21 one does:
 
 ```

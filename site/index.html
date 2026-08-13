@@ -101,12 +101,12 @@
 
   <h2>How this page is built</h2>
   <p>
-    The <code>containers</code> and <code>android-ech</code> workflows each upload the JUnit XML
-    from every task they run, including the tasks that report without failing. The
-    <code>pages</code> workflow rebuilds this page when either finishes, collecting the most recent
-    completed run of both — so a container run finishing doesn't blank the ECH results, or the
-    reverse — converts them to JSON, appends a summary to the history already published here, and
-    redeploys the site. Nothing is committed to the repository: the deployed site is its own
+    The <code>containers</code>, <code>android-ech</code> and <code>network</code> workflows each
+    upload the JUnit XML from every task they run, including the tasks that report without failing.
+    The <code>pages</code> workflow rebuilds this page when any of them finishes, collecting the most
+    recent completed run of all three — so a container run finishing doesn't blank the ECH results,
+    or the reverse — converts them to JSON, appends a summary to the history already published here,
+    and redeploys the site. Nothing is committed to the repository: the deployed site is its own
     datastore.
   </p>
   <p>

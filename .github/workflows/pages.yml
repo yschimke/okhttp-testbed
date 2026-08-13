@@ -6,7 +6,7 @@ name: pages
 # without waiting for tomorrow's tests.
 on:
   workflow_run:
-    workflows: [containers, android-ech]
+    workflows: [containers, android-ech, network]
     types: [completed]
   push:
     branches:
@@ -33,7 +33,7 @@ env:
   # Every workflow whose results the page reports. Each one's most recent completed run on
   # main is collected on every build, whichever of them triggered it — a containers run
   # finishing must not blank the ECH results, or the reverse.
-  TEST_WORKFLOWS: containers.yml android-ech.yml
+  TEST_WORKFLOWS: containers.yml android-ech.yml network.yml
 
 jobs:
   build-and-deploy:
