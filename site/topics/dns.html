@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DNS — OkHttp Testbed</title>
+<meta name="description" content="DNS coverage in the OkHttp testbed: DNS over HTTPS, SVCB and HTTPS records, Happy Eyeballs, and the public resolvers involved.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="site-title" href="../">OkHttp Testbed <span>status</span></a>
+    <nav class="site-nav">
+      <a href="../">Status</a>
+      <a href="ech.html">ECH</a>
+      <a href="dns.html" aria-current="page">DNS</a>
+      <a href="tls.html">TLS</a>
+      <a href="proxies.html">Proxies</a>
+      <a href="loom.html">Virtual threads</a>
+      <a href="https://github.com/yschimke/okhttp-testbed">GitHub ↗</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <h1>DNS</h1>
+  <p class="lede">
+    Name resolution is where a connection starts, and increasingly where it is configured:
+    an <code>HTTPS</code> record can carry the ALPN list, an alternative port, address hints, and
+    the ECH configuration. Testing that means talking to real resolvers, because no two of them
+    return quite the same thing.
+  </p>
+
+  <h2>Why it lives here</h2>
+  <p>
+    OkHttp's own test suite can verify that a DNS message parses. It cannot verify that
+    <code>1.1.1.1</code> still answers an <code>HTTPS</code> query the way it did last month, that a
+    resolver on the path does not strip service metadata, or that a record's address hints point
+    somewhere reachable. Those are properties of the internet, checked by running against it.
+  </p>
+
+  <h2>Specifications</h2>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Document</th><th>Title</th><th>Why it matters here</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono"><a href="https://www.rfc-editor.org/rfc/rfc8484.html">RFC 8484</a></td>
+          <td>DNS Queries over HTTPS (DoH)</td>
+          <td>What <code>okhttp-dnsoverhttps</code> implements, and the portable way to ask for record types the platform resolver will not return.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://www.rfc-editor.org/rfc/rfc9460.html">RFC 9460</a></td>
+          <td>Service Binding and Parameter Specification via the DNS</td>
+          <td><code>SVCB</code> and <code>HTTPS</code> records: ALPN, port, IP hints, and AliasMode. Requested with <code>includeServiceMetadata(true)</code>.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://www.rfc-editor.org/rfc/rfc9848.html">RFC 9848</a></td>
+          <td>Bootstrapping TLS Encrypted ClientHello with DNS Service Bindings</td>
+          <td>The <code>ech</code> SvcParam — the DNS half of <a href="ech.html">ECH</a>.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://www.rfc-editor.org/rfc/rfc8305.html">RFC 8305</a></td>
+          <td>Happy Eyeballs Version 2</td>
+          <td>How the addresses a resolver returns are raced. Behaviour depends on getting genuinely mixed A/AAAA answers.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://www.rfc-editor.org/rfc/rfc6555.html">RFC 6555</a></td>
+          <td>Happy Eyeballs: Success with Dual-Stack Hosts</td>
+          <td>The original dual-stack connection strategy that RFC 8305 refines.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://www.rfc-editor.org/rfc/rfc1035.html">RFC 1035</a></td>
+          <td>Domain Names — Implementation and Specification</td>
+          <td>The wire format every DoH response is still encoded in.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://www.rfc-editor.org/rfc/rfc5890.html">RFC 5890</a> ·
+              <a href="https://www.rfc-editor.org/rfc/rfc3492.html">RFC 3492</a></td>
+          <td>Internationalized Domain Names, and Punycode</td>
+          <td>Hostname canonicalisation before a name is ever resolved.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Test resolvers</h2>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Endpoint</th><th>Operator</th><th>Notes</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono">https://1.1.1.1/dns-query</td>
+          <td>Cloudflare</td>
+          <td>Addressed by IP, so resolving the resolver does not itself need a resolver. Returns <code>HTTPS</code> records with <code>ech</code>.</td>
+        </tr>
+        <tr>
+          <td class="mono">https://dns.google/dns-query</td>
+          <td>Google</td>
+          <td>A second implementation to compare answers against.</td>
+        </tr>
+        <tr>
+          <td class="mono">https://dns.quad9.net/dns-query</td>
+          <td>Quad9</td>
+          <td>Filtering resolver; useful for checking behaviour when an answer is withheld.</td>
+        </tr>
+        <tr>
+          <td class="mono">The platform resolver</td>
+          <td>—</td>
+          <td>On Android, <code>AndroidDns</code> can return service metadata directly. Off-device this is where DoH is needed instead.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Reading a result</h2>
+  <p>
+    DNS failures are the most environment-sensitive results the testbed produces. Before treating
+    one as an OkHttp bug, check whether the same query answers the same way from another network:
+    a CI runner's egress path, a captive resolver, or a rate limit at the resolver will all show up
+    as a client failure. A difference between two resolvers for the same name is a finding worth
+    keeping, not necessarily a bug in either.
+  </p>
+
+  <p class="note">
+    Network suites are not yet wired into the daily run; the <a href="../">status page</a> lists
+    the suites that exist today. This page describes what the DNS coverage will assert against when
+    it lands, and the specifications it is being written to.
+  </p>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span>OkHttp Testbed — Apache 2.0</span>
+    <a href="https://github.com/yschimke/okhttp-testbed">Repository</a>
+    <a href="https://github.com/square/okhttp">OkHttp</a>
+  </div>
+</footer>
+
+</body>
+</html>

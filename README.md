@@ -92,10 +92,50 @@ otherwise caches a changing module for 24 hours and a daily job would test yeste
 build under today's name.
 
 JUnit XML results are uploaded as artifacts on every run — from both `test` and `loomTest`,
-for each version, as `container-test-results-<version>` — which is what the status page
-will be built from. The job runs with `--continue` so one failing suite doesn't rob the
+for each version, as `container-test-results-<version>`, alongside a `run-metadata.json`
+recording which OkHttp version `pinned` actually resolved to — which is what the status page
+is built from. The job runs with `--continue` so one failing suite doesn't rob the
 others of a result, and the matrix runs with `fail-fast: false` so one failing version
 doesn't rob the other.
+
+Status site
+-----------
+
+<https://yschimke.github.io/okhttp-testbed/> — the most recent run per version, per suite,
+with the failing assertions in full, a history strip, and a topic page per area covered
+(ECH, DNS, TLS, proxies, virtual threads) linking the relevant RFCs and the public test
+servers involved.
+
+The site is `site/`, deployed as it sits: plain HTML and CSS, no static site generator, no
+build step. The only generated files are `site/data/latest.json` and `site/data/history.json`.
+
+`.github/workflows/pages.yml` runs when a `containers` run finishes on `main`. It downloads
+that run's artifacts, converts the JUnit XML with `site/tools/collect_results.py`, and
+deploys. History is not committed: the workflow fetches `data/history.json` back off the
+deployed site, appends the run just finished, and republishes — the deployed site is its own
+datastore, capped at the last 120 runs. A pull request's `containers` run is deliberately not
+published; it is about the pull request, not about the state of the repository.
+
+Two distinctions the page depends on, both decided when the XML is collected:
+
+- A suite's Gradle task decides whether a failure is **failing** or a **finding**. `test`
+  failing means this repository is red; `loomTest` failing is a recorded finding about
+  OkHttp, and the page shows it in amber — see below.
+- The version label comes from `run-metadata.json`, so the page names `5.4.0` rather than
+  "pinned".
+
+This needs Pages set to deploy from GitHub Actions — Settings → Pages → Source: GitHub
+Actions — which is a one-time setting on the repository, not something the workflow can do
+for itself. Until it is set, the workflow's deploy step is the only thing that will fail.
+
+To change the site, edit `site/` and push to `main`; a push touching `site/**` redeploys it
+and carries the published results forward. To preview locally, generate some data from a
+downloaded artifact directory and serve the folder:
+
+```
+python3 site/tools/collect_results.py --artifacts <downloaded-artifacts> --out site/data
+python3 -m http.server --directory site 8000
+```
 
 Suites that report rather than gate
 -----------------------------------

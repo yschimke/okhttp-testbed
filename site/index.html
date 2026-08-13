@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OkHttp Testbed</title>
+<meta name="description" content="Status of the OkHttp testbed: tests that run against real containers and real networks, against published OkHttp artifacts.">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="site-title" href="./">OkHttp Testbed <span>status</span></a>
+    <nav class="site-nav">
+      <a href="./" aria-current="page">Status</a>
+      <a href="topics/ech.html">ECH</a>
+      <a href="topics/dns.html">DNS</a>
+      <a href="topics/tls.html">TLS</a>
+      <a href="topics/proxies.html">Proxies</a>
+      <a href="topics/loom.html">Virtual threads</a>
+      <a href="https://github.com/yschimke/okhttp-testbed">GitHub ↗</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <h1>Testbed status</h1>
+  <p class="lede">
+    Tests for OkHttp features that need real infrastructure behind them — containers to run
+    against, or a network to reach out over. They run daily against <em>published</em> OkHttp
+    artifacts, through the public API only, so the results compare versions rather than builds.
+  </p>
+
+  <div class="run-summary" id="run-summary">Loading the most recent run…</div>
+
+  <h2>Versions under test</h2>
+  <div class="cards" id="version-cards"></div>
+  <p class="note">
+    The pinned release is the version in <code>gradle/libs.versions.toml</code>; every push and
+    pull request tests it. The scheduled run adds the current OkHttp snapshot, so a regression on
+    OkHttp's main branch shows up here before it reaches a release.
+  </p>
+
+  <h2>Suites</h2>
+  <div class="table-scroll">
+    <table id="suite-table"></table>
+  </div>
+  <p class="note">
+    A suite run under <code>loomTest</code> reports rather than gates: it asserts something about
+    OkHttp that is currently false, so a failure there is a <em>finding</em> about the published
+    artifact and does not turn this repository red. Everything under <code>test</code> is fatal.
+  </p>
+
+  <section id="failures" hidden>
+    <h2>Failures and findings</h2>
+    <div id="failure-list"></div>
+  </section>
+
+  <h2>History</h2>
+  <div id="history"></div>
+  <p class="note">
+    One block per run, oldest on the left, capped at the last 120 runs. Red is a failing suite in
+    this repository; amber is a recorded finding about OkHttp. Hover a block for its counts, click
+    it for the workflow run.
+  </p>
+
+  <h2>Topics</h2>
+  <p>
+    Each topic collects what the testbed covers in that area, the specifications it is testing
+    against, and the public test servers involved.
+  </p>
+  <div class="topic-grid">
+    <a class="topic-card" href="topics/ech.html">
+      <h3>Encrypted Client Hello</h3>
+      <p>RFC 9849 and RFC 9848, retry on rejection, and the public ECH test servers.</p>
+    </a>
+    <a class="topic-card" href="topics/dns.html">
+      <h3>DNS</h3>
+      <p>DNS over HTTPS, SVCB and HTTPS records, Happy Eyeballs, and the resolvers used.</p>
+    </a>
+    <a class="topic-card" href="topics/tls.html">
+      <h3>TLS</h3>
+      <p>Certificate verification against a real server, and the interoperability sites.</p>
+    </a>
+    <a class="topic-card" href="topics/proxies.html">
+      <h3>Proxies</h3>
+      <p>SOCKS5 and HTTP CONNECT against containerised proxies.</p>
+    </a>
+    <a class="topic-card" href="topics/loom.html">
+      <h3>Virtual threads</h3>
+      <p>Carrier-thread pinning under Loom, and what JEP 491 changes.</p>
+    </a>
+  </div>
+
+  <h2>How this page is built</h2>
+  <p>
+    The <code>containers</code> workflow uploads the JUnit XML from every task it runs, for every
+    version in the matrix, including the tasks that report without failing. The <code>pages</code>
+    workflow picks those artifacts up when the run finishes, converts them to JSON, appends a
+    summary to the history already published here, and redeploys the site. Nothing is committed to
+    the repository: the deployed site is its own datastore.
+  </p>
+  <p>
+    The raw data is served alongside the page —
+    <a href="data/latest.json">latest.json</a> and <a href="data/history.json">history.json</a>.
+  </p>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span>OkHttp Testbed — Apache 2.0</span>
+    <a href="https://github.com/yschimke/okhttp-testbed">Repository</a>
+    <a href="https://github.com/square/okhttp">OkHttp</a>
+    <a href="https://github.com/yschimke/okhttp-testbed/actions/workflows/containers.yml">Workflow runs</a>
+  </div>
+</footer>
+
+<script src="assets/status.js"></script>
+</body>
+</html>

@@ -69,6 +69,26 @@ jobs:
           ./gradlew containers:test containers:loomTest --continue
           ${{ matrix.okhttpVersion && format('-PokhttpVersion={0}', matrix.okhttpVersion) || '' }}
 
+      # What the XML can't say: which OkHttp version 'pinned' actually resolved to, and
+      # what the job as a whole did. The status page names the version under test, so it
+      # has to be recorded by the run rather than guessed from the artifact name.
+      - name: Record Run Metadata
+        if: always()
+        run: |
+          version='${{ matrix.okhttpVersion }}'
+          if [ -z "$version" ]; then
+            version=$(sed -n 's/^okhttp = "\(.*\)"$/\1/p' gradle/libs.versions.toml)
+          fi
+          mkdir -p containers/build/test-results
+          cat > containers/build/test-results/run-metadata.json <<JSON
+          {
+            "label": "${{ matrix.okhttpVersion || 'pinned' }}",
+            "okhttpVersion": "$version",
+            "javaVersion": "21",
+            "jobStatus": "${{ job.status }}"
+          }
+          JSON
+
       # Both tasks' XML, including loomTest's, which records findings without failing
       # the build. The status page reads results from here, not from the job's colour.
       - name: Upload Test Results
@@ -76,5 +96,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: container-test-results-${{ matrix.okhttpVersion || 'pinned' }}
-          path: containers/build/test-results/*/*.xml
+          path: |
+            containers/build/test-results/*/*.xml
+            containers/build/test-results/run-metadata.json
           retention-days: 30

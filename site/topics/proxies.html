@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proxies — OkHttp Testbed</title>
+<meta name="description" content="Proxy coverage in the OkHttp testbed: SOCKS5 and HTTP CONNECT against containerised proxies, and the specifications behind them.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="site-title" href="../">OkHttp Testbed <span>status</span></a>
+    <nav class="site-nav">
+      <a href="../">Status</a>
+      <a href="ech.html">ECH</a>
+      <a href="dns.html">DNS</a>
+      <a href="tls.html">TLS</a>
+      <a href="proxies.html" aria-current="page">Proxies</a>
+      <a href="loom.html">Virtual threads</a>
+      <a href="https://github.com/yschimke/okhttp-testbed">GitHub ↗</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <h1>Proxies</h1>
+  <p class="lede">
+    A proxy is the one piece of network infrastructure an application cannot emulate convincingly
+    in-process: the interesting behaviour is in a real implementation's handling of CONNECT,
+    authentication, and address forms. So the testbed runs real ones, in containers.
+  </p>
+
+  <h2>What runs today</h2>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Suite</th><th>Containers</th><th>What it covers</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono">SocksProxyTest</td>
+          <td><code>serjs/go-socks5-proxy</code> and MockServer, on a shared Docker network</td>
+          <td>SOCKS5 through <code>Proxy(SOCKS, …)</code>, including the case where the origin server is only reachable from inside the proxy's network — so a request that succeeds proves it really went through the proxy.</td>
+        </tr>
+        <tr>
+          <td class="mono">BasicProxyTest</td>
+          <td>MockServer, in proxy mode</td>
+          <td>HTTP proxying and <code>CONNECT</code> tunnelling for <code>https</code>, compared against <code>HttpURLConnection</code> as a control.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Both suites run under the <code>test</code> task, so a failure is fatal: unlike the findings
+    suites, a broken proxy result means something here is wrong — a moved image, a changed default,
+    or a real client regression.
+  </p>
+
+  <h2>Specifications</h2>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Document</th><th>Title</th><th>Why it matters here</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono"><a href="https://www.rfc-editor.org/rfc/rfc1928.html">RFC 1928</a></td>
+          <td>SOCKS Protocol Version 5</td>
+          <td>The handshake and address forms <code>SocksProxyTest</code> drives.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://www.rfc-editor.org/rfc/rfc1929.html">RFC 1929</a></td>
+          <td>Username/Password Authentication for SOCKS V5</td>
+          <td>The authenticated variant — a natural next case for the SOCKS suite.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://www.rfc-editor.org/rfc/rfc9110.html#name-connect">RFC 9110 §9.3.6</a></td>
+          <td>HTTP Semantics — CONNECT</td>
+          <td>The tunnel an <code>https</code> request opens through an HTTP proxy.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://www.rfc-editor.org/rfc/rfc9110.html#name-proxy-authenticate">RFC 9110 §11.7</a> ·
+              <a href="https://www.rfc-editor.org/rfc/rfc7235.html">RFC 7235</a></td>
+          <td>Proxy authentication</td>
+          <td><code>Proxy-Authenticate</code> and <code>Proxy-Authorization</code> handling, including on the CONNECT exchange itself.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://www.rfc-editor.org/rfc/rfc9112.html">RFC 9112</a></td>
+          <td>HTTP/1.1</td>
+          <td>Absolute-form request targets, which is what distinguishes a proxied request on the wire.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Test infrastructure</h2>
+  <p>
+    Everything here is containerised, so there are no third-party servers to depend on — but there
+    are third-party <em>images</em>, and those move. Image tags are pinned deliberately:
+  </p>
+  <ul>
+    <li><code>serjs/go-socks5-proxy:v0.0.3</code> — a small SOCKS5 server.</li>
+    <li><code>mockserver/mockserver</code> — pinned to match the Java client version in
+      <code>gradle/libs.versions.toml</code>, because the client refuses to talk to a server whose
+      major.minor differs. That mismatch was the first real failure this repository caught.</li>
+  </ul>
+
+  <h2>Reading a result</h2>
+  <p>
+    Check whether the failure reproduces locally with <code>./gradlew containers:test</code> before
+    looking upstream. A proxy suite that fails on CI but passes locally usually means the runner's
+    Docker networking, not the client: these tests depend on container-to-container name resolution
+    over a user-defined network.
+  </p>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span>OkHttp Testbed — Apache 2.0</span>
+    <a href="https://github.com/yschimke/okhttp-testbed">Repository</a>
+    <a href="https://github.com/square/okhttp">OkHttp</a>
+  </div>
+</footer>
+
+</body>
+</html>

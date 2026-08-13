@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TLS — OkHttp Testbed</title>
+<meta name="description" content="TLS coverage in the OkHttp testbed: certificate verification against a real server, the specifications, and public interoperability sites.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="site-title" href="../">OkHttp Testbed <span>status</span></a>
+    <nav class="site-nav">
+      <a href="../">Status</a>
+      <a href="ech.html">ECH</a>
+      <a href="dns.html">DNS</a>
+      <a href="tls.html" aria-current="page">TLS</a>
+      <a href="proxies.html">Proxies</a>
+      <a href="loom.html">Virtual threads</a>
+      <a href="https://github.com/yschimke/okhttp-testbed">GitHub ↗</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <h1>TLS</h1>
+  <p class="lede">
+    The testbed's TLS coverage runs against a real server with a real certificate chain, trusted
+    the way an application would trust one — never by disabling verification. That constraint is
+    what makes the result mean something.
+  </p>
+
+  <h2>What runs today</h2>
+  <p>
+    <code>BasicMockServerTest</code> starts a MockServer container and makes the same request over
+    both <code>http</code> and <code>https</code>. The interesting half is the trust setup:
+    <code>trustMockServer()</code> builds a real <code>X509TrustManager</code> from MockServer's own
+    keystore rather than accepting anything. Where a test needs something the public API does not
+    offer, the testbed solves it with the container rather than reaching into
+    <code>okhttp3.internal</code> — an all-trusting client would pass whether or not verification
+    works, which is the opposite of a test.
+  </p>
+  <p>
+    The same TLS endpoint is what <a href="loom.html">the virtual-thread suite</a> drives, because
+    the pinning it looks for happens in the HTTP/2 write path over TLS.
+  </p>
+
+  <h2>Specifications</h2>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Document</th><th>Title</th><th>Why it matters here</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono"><a href="https://www.rfc-editor.org/rfc/rfc8446.html">RFC 8446</a></td>
+          <td>TLS 1.3</td>
+          <td>The version everything current negotiates, and the one <a href="ech.html">ECH</a> requires.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://www.rfc-editor.org/rfc/rfc5246.html">RFC 5246</a></td>
+          <td>TLS 1.2</td>
+          <td>Still what a container image or an older endpoint may offer; the fallback path has to stay correct.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://www.rfc-editor.org/rfc/rfc5280.html">RFC 5280</a></td>
+          <td>X.509 Certificate and CRL Profile</td>
+          <td>Chain building and validation — what <code>okhttp-tls</code> parses and what the trust manager enforces.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://www.rfc-editor.org/rfc/rfc6125.html">RFC 6125</a></td>
+          <td>Service Identity in TLS</td>
+          <td>Hostname verification, superseding the practice described in RFC 2818.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://www.rfc-editor.org/rfc/rfc7301.html">RFC 7301</a></td>
+          <td>ALPN</td>
+          <td>How HTTP/2 is negotiated, and one of the fields ECH hides.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://www.rfc-editor.org/rfc/rfc7468.html">RFC 7468</a></td>
+          <td>Textual Encodings of PKIX Structures</td>
+          <td>The PEM handling in <code>okhttp-tls</code>.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://www.rfc-editor.org/rfc/rfc6962.html">RFC 6962</a></td>
+          <td>Certificate Transparency</td>
+          <td>Relevant to any real-world chain a network suite will encounter.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Test sites</h2>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Endpoint</th><th>Operator</th><th>What it offers</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono">mockserver/mockserver (container)</td>
+          <td>MockServer</td>
+          <td>What runs today: a local TLS endpoint with a keystore the test trusts explicitly. The image tag is pinned to the client version, because a client refuses to talk to a server whose major.minor differs.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://badssl.com/">badssl.com</a></td>
+          <td>badssl.com</td>
+          <td>The standard set of chains that must be <em>rejected</em>: expired, wrong host, self-signed, revoked, and weak-crypto endpoints.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://tls13.akamai.io/">tls13.akamai.io</a></td>
+          <td>Akamai</td>
+          <td>A TLS 1.3 endpoint on an independent stack.</td>
+        </tr>
+        <tr>
+          <td class="mono"><a href="https://www.ssllabs.com/ssltest/">SSL Labs</a></td>
+          <td>Qualys</td>
+          <td>Not a test target — the reference for what a given endpoint actually offers when a result needs explaining.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Reading a result</h2>
+  <p>
+    A TLS failure against a container is almost always this repository's problem: the image moved,
+    or the client and server versions drifted. A TLS failure against a public endpoint is more
+    often the endpoint's — certificates get renewed, and a chain that changes can fail a test that
+    was too specific about it. The rule of thumb is that a test asserting a connection
+    <em>succeeds</em> is fragile against the internet; one asserting it is <em>refused</em>, as with
+    the badssl endpoints, is much less so.
+  </p>
+
+  <p class="note">
+    Only the MockServer suite runs today. The public endpoints above are where the network suite
+    will point; they are listed here so the intent is on the record before the code is.
+  </p>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span>OkHttp Testbed — Apache 2.0</span>
+    <a href="https://github.com/yschimke/okhttp-testbed">Repository</a>
+    <a href="https://github.com/square/okhttp">OkHttp</a>
+  </div>
+</footer>
+
+</body>
+</html>
