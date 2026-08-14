@@ -4,11 +4,16 @@
 Input is a directory of downloaded artifacts, one per version per workflow, each carrying
 the `run-metadata.json` its workflow wrote:
 
-    <artifacts>/container-test-results-pinned/run-metadata.json
-    <artifacts>/container-test-results-pinned/test/TEST-*.xml
-    <artifacts>/container-test-results-pinned/loomTest/TEST-*.xml
-    <artifacts>/android-ech-test-results-pinned-snapshot/run-metadata.json
-    <artifacts>/android-ech-test-results-pinned-snapshot/outputs/androidTest-results/…/*.xml
+    <artifacts>/container-test-results-pinned-jdk21/run-metadata.json
+    <artifacts>/container-test-results-pinned-jdk21/test/TEST-*.xml
+    <artifacts>/container-test-results-pinned-jdk21/loomTest/TEST-*.xml
+    <artifacts>/android-ech-test-results-pinned-snapshot-api37.0/run-metadata.json
+    <artifacts>/android-ech-test-results-pinned-snapshot-api37.0/outputs/androidTest-results/…/*.xml
+
+One artifact per version *per variant*: the suites run across several JDKs and several emulator
+API levels, and each of those is its own job and its own artifact. The variant a job ran on is
+in its `run-metadata.json` and becomes part of every suite name it contributes, so a version
+card carries one row per suite per variant rather than one row that keeps changing its mind.
 
 The network suite adds two more files per Gradle task, written by the suites themselves
 rather than by JUnit — what it found reachable, and what its handshake offered:
@@ -66,8 +71,22 @@ REPORTING_CLASSES = {"PublicEncryptedClientHelloTest"}
 HISTORY_LIMIT = 120
 
 
-def parse_suite(path: pathlib.Path, task: str, workflow: str, run_url: str, platform: str) -> dict:
-    """Read one JUnit XML file into a suite record."""
+def parse_suite(
+    path: pathlib.Path,
+    task: str,
+    workflow: str,
+    run_url: str,
+    platform: str,
+    variant: str = "",
+) -> dict:
+    """Read one JUnit XML file into a suite record.
+
+    `variant` is what the run was testing *on* rather than what it was testing — a JDK for the
+    container and network suites, an emulator API level for the Android one. It becomes part of
+    the suite's name because the status page keys its rows by that name, and one version card
+    now merges several runs of the same suite: without it, `GoHttpbinTest` on JDK 17 and on JDK
+    25 are one row, and whichever was read last silently wins.
+    """
     root = ElementTree.parse(path).getroot()
     # Gradle writes a single <testsuite> per file, but a <testsuites> wrapper is legal.
     if root.tag == "testsuites":
@@ -107,7 +126,7 @@ def parse_suite(path: pathlib.Path, task: str, workflow: str, run_url: str, plat
 
     simple_name = root.get("name", path.stem).rsplit(".", 1)[-1]
     return {
-        "name": simple_name,
+        "name": f"{simple_name} · {variant}" if variant else simple_name,
         "className": root.get("name", ""),
         "workflow": workflow,
         "runUrl": run_url,
@@ -229,12 +248,14 @@ def parse_artifact(directory: pathlib.Path) -> dict | None:
     # the metadata rather than from the path.
     default_task = metadata.get("task", "test")
     task_from_path = metadata.get("taskFromPath", False)
+    # Runs from before the matrices went wide carry no variant, and read as they always did.
+    variant = metadata.get("variant", "")
 
     suites = []
     for xml in sorted(directory.rglob("*.xml")):
         task = xml.parent.name if task_from_path and xml.parent != directory else default_task
         try:
-            suites.append(parse_suite(xml, task, workflow, run_url, platform))
+            suites.append(parse_suite(xml, task, workflow, run_url, platform, variant))
         except ElementTree.ParseError as e:
             print(f"skipping unreadable {xml}: {e}", file=sys.stderr)
 
@@ -249,6 +270,7 @@ def parse_artifact(directory: pathlib.Path) -> dict | None:
         "label": label,
         "okhttpVersion": metadata.get("okhttpVersion", label),
         "platform": platform,
+        "variant": variant,
         "jobStatus": metadata.get("jobStatus", ""),
         "runNumber": metadata.get("runNumber", 0),
         "runUrl": run_url,

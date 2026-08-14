@@ -46,6 +46,12 @@ android {
   compileOptions {
     sourceCompatibility(JavaVersion.VERSION_11)
     targetCompatibility(JavaVersion.VERSION_11)
+
+    // JUnit 5 is compiled against Java 8 APIs — `java.util.function`, `Optional`, `java.time` —
+    // which Android only has from API 26. The suite runs on API 21 upwards, so without this the
+    // runner dies with NoClassDefFoundError on the oldest emulators in the matrix before a single
+    // test is reached. Desugaring is what makes "minSdk 21" true of the tests as well as the code.
+    isCoreLibraryDesugaringEnabled = true
   }
 
   testOptions {
@@ -54,6 +60,8 @@ android {
 }
 
 dependencies {
+  coreLibraryDesugaring(libs.desugar.jdk.libs)
+
   androidTestImplementation("com.squareup.okhttp3:okhttp:$okhttpVersion")
   androidTestImplementation("com.squareup.okhttp3:okhttp-dnsoverhttps:$okhttpVersion")
 
