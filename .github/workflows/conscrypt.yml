@@ -44,11 +44,11 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       # Conscrypt's own build wants a JDK to compile against and JNI headers to build against.
       - name: Configure JDK
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v5.7.0
         with:
           distribution: 'temurin'
           java-version: 17
@@ -108,7 +108,7 @@ jobs:
       # fetched back — including on a pull request, where it exercises the fallback path.
       - name: Upload the build
         if: always() && (steps.existing.outputs.exists == 'false' || inputs.force)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: conscrypt-${{ steps.pin.outputs.tag }}
           path: conscrypt/build/dist/
