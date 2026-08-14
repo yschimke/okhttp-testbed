@@ -9,7 +9,7 @@ COPY go.mod ./
 COPY *.go ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /test-server .
 
-FROM alpine:3.23
+FROM alpine:3.24
 
 # curl earns its place: the image's own healthcheck uses it, and so does anyone debugging a
 # deployment from inside the container.
