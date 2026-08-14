@@ -16,7 +16,7 @@ Suites
 |---------------|-----------------------------|---------------------------------------------------------------------|
 | `containers`  | Docker                      | SOCKS5 and HTTP proxies, TLS via MockServer, HTTP semantics via go-httpbin, chains that must be rejected, hostile responses, virtual threads (Loom) |
 | `network`     | Outbound network            | ALPN and SNI overrides, Let's Encrypt trust, hostile responses in public, ECH on the public servers |
-| `android-ech` | Docker, an API 37 emulator  | Encrypted Client Hello over DoH: accepted, retried, and declined, plus the public servers |
+| `android-ech` | Docker, emulators from API 21 to 37 | Encrypted Client Hello over DoH: accepted, retried, and declined, plus the public servers |
 
 The `network` suites call servers other people operate — Google, Cloudflare, Let's Encrypt,
 and the ECH test servers at `tls-ech.dev` and `defo.ie`. They came from OkHttp's
@@ -170,7 +170,12 @@ One wrinkle worth recording, since it will catch somebody: **the go-httpbin imag
 Running locally
 ---------------
 
-Requires Docker and JDK 21+.
+Requires Docker and JDK 21+. `-PtestJavaVersion` picks the JDK a suite compiles and runs
+against, which is how CI covers more than one:
+
+```
+./gradlew containers:test -PtestJavaVersion=17
+```
 
 ```
 ./gradlew containers:test containers:loomTest containers:hostileTest
@@ -287,9 +292,16 @@ android-ech/run-ech-test.sh              # fixture, adb reverse, instrumentation
 android-ech/run-ech-test.sh --smoke-only # fixture only, for a machine with no emulator
 ```
 
-It needs a running emulator or a connected device on API 37 — `android.net.ssl.EchConfigList`,
-which is how OkHttp's Android platform applies a config list, arrived there. The tests skip
-themselves on anything older, and on a run that didn't come through the script.
+It needs a running emulator or a connected device, and what it can assert depends on which:
+
+| API level | What the run establishes                                                        |
+|-----------|---------------------------------------------------------------------------------|
+| 21–28     | The library loads and initializes. Every case skips: the fixture origin is TLS 1.3 only, and Android gained TLS 1.3 in API 29 |
+| 29–36     | The fallback. A config list OkHttp cannot apply must produce an ordinary handshake to the real name rather than a failed call |
+| 37+       | ECH itself — `android.net.ssl.EchConfigList`, which is how OkHttp's Android platform applies a config list, arrived there |
+
+The cases also skip on a run that didn't come through the script, which is what supplies the
+fixture's ports and CA.
 
 This suite tests **5.5.0-SNAPSHOT** by default, not the release the other suites pin, and
 `libs.versions.toml` carries that as a separate `ech-okhttp` version. It has to: the suite
@@ -366,11 +378,11 @@ once. They run on the schedule, and on demand:
 
 | Job                              | Version                              | Runs on                       |
 |----------------------------------|--------------------------------------|-------------------------------|
-| `containers (pinned release)`    | the `okhttp` version in `libs.versions.toml` | every event            |
-| `containers (5.5.0-SNAPSHOT)`    | the current snapshot                 | schedule and manual runs only |
+| `containers (pinned release, JDK 21)` | the `okhttp` version in `libs.versions.toml` | every event       |
+| `containers (…, JDK 17 · 21 · 25)` | the pinned release and the snapshot | schedule and manual runs only |
 | `network / compile`              | the `okhttp` version in `libs.versions.toml` | push and pull request  |
-| `network (pinned release)`       | the `okhttp` version in `libs.versions.toml` | schedule and manual runs only |
-| `network (5.5.0-SNAPSHOT)`       | the current snapshot                 | schedule and manual runs only |
+| `network (…, JDK 17 · 21 · 25)`  | the pinned release and the snapshot  | schedule and manual runs only |
+| `android-ech (…, API 21 · 29 · 34 · 37)` | the snapshot                 | API 37 on every event, the rest on schedule and manual runs only |
 
 What keeps the network module honest between scheduled runs is `network / compile`, which
 runs on every push and pull request touching `network/**` and calls nobody: it compiles the
@@ -385,6 +397,29 @@ build. A `workflow_dispatch` run with an explicit `okhttpVersion` overrides the 
 tests only that version — which is also how to get a network answer without waiting for
 tomorrow.
 
+### Which versions the daily run covers
+
+Per-commit runs test one JDK and one emulator, because those runs are about this repository.
+The daily run is where the version axes open up, since the question they answer — how a
+*published* OkHttp behaves across the platforms its users are on — doesn't change with a
+commit here and isn't worth asking more than once a day:
+
+| Axis        | Daily coverage | Why those                                                    |
+|-------------|----------------|--------------------------------------------------------------|
+| JDK         | 17, 21, 25     | 17 is the floor: OkHttp itself supports Java 8, but the harness around it doesn't — JUnit 5.14 needs 17 — so 17 is as low as a suite can run here. 25 is the current LTS and the ceiling. 21 is the LTS most builds are on, and the one the Loom finding is about: `BasicLoomTest` is `@EnabledForJreRange(min = JAVA_21)`, and JEP 491 changes its answer on 24+, so the 21 and 25 rows are the before and after of that. Java 26 is out and would work — Kotlin 2.4 targets it — but the LTS ceiling is the one users are on |
+| Android API | 21, 29, 34, 37 | 21 is the module's `minSdk` and OkHttp 5's. 29 is the first level with TLS 1.3, and so the first that can reach the fixture at all. 34 is where most devices in the field are. 37 is where ECH exists. What each level actually establishes is in the table under [The ECH suite](#the-ech-suite) |
+
+Four scheduled workflows, spread across the day rather than started together — `containers`
+at 02:17 UTC, `test-server` at 06:41, `network` at 10:43, `android-ech` at 14:47. Each is
+now several jobs wide, and a failure is easier to read against a quiet runner queue than
+against three other suites' worth of containers and emulators. It also keeps the network
+suites' load on other people's servers spread out rather than arriving in one burst.
+
+Widening the matrices is what makes the status page's suite rows carry the platform they ran
+on: a version card merges every artifact testing that version, so `GoHttpbinTest · JDK 17`
+and `GoHttpbinTest · JDK 25` are separate rows. The variant comes from `run-metadata.json`
+rather than from the artifact name, for the same reason the version does.
+
 When OkHttp's main branch moves past 5.5.0, bump the snapshot version in the workflow's
 matrix. Snapshot runs re-resolve the artifact every time — each suite's `build.gradle.kts`
 sets `cacheChangingModulesFor(0, "seconds")` for `-SNAPSHOT` versions, since Gradle
@@ -392,8 +427,8 @@ otherwise caches a changing module for 24 hours and a daily job would test yeste
 build under today's name.
 
 JUnit XML results are uploaded as artifacts on every run — from the gating and the reporting
-tasks alike, for each version, as `container-test-results-<version>` and
-`network-test-results-<version>`, alongside a `run-metadata.json` recording which OkHttp
+tasks alike, one per version per JDK, as `container-test-results-<version>-jdk<version>` and
+`network-test-results-<version>-jdk<version>`, alongside a `run-metadata.json` recording which OkHttp
 version `pinned` actually resolved to — which is what the status page is built from. Each job
 runs with `--continue` so one failing suite doesn't rob the others of a result, and the
 matrix runs with `fail-fast: false` so one failing version doesn't rob the other.
@@ -408,11 +443,12 @@ uploads nothing, `pages.yml` collects the most recent run *carrying artifacts* r
 simply the most recent run — otherwise a compile-only run would blank the network results.
 
 The `android-ech` workflow runs on the same events, on its own daily schedule, and uploads
-its results as `android-ech-test-results-<version>`. It runs one version rather than a
-matrix — the snapshot — because that is the only version with the API the suite needs. It
-boots an API 37 emulator, so it is slower and more failure-prone than the container jobs;
-that is the price of testing ECH at all, and it is why it is a separate workflow whose
-colour doesn't mask the container suites'.
+its results as `android-ech-test-results-<version>-api<level>`. It runs one OkHttp version
+rather than a matrix of them — the snapshot — because that is the only version with the API
+the suite needs; its matrix is over emulators instead. Every job boots one, so it is slower
+and more failure-prone than the container jobs; that is the price of testing ECH at all, and
+it is why it is a separate workflow whose colour doesn't mask the container suites'. Push and
+pull request runs boot only the API 37 emulator, which is the one that can do ECH.
 
 Both workflows write a `run-metadata.json` into their artifact recording which OkHttp
 version they actually resolved, and which run produced it. That is what lets the status site

@@ -16,6 +16,7 @@
 package okhttp.testbed.android.ech
 
 import android.os.Build
+import android.util.Base64
 import androidx.test.platform.app.InstrumentationRegistry
 import assertk.assertThat
 import assertk.assertions.contains
@@ -24,7 +25,6 @@ import java.io.ByteArrayInputStream
 import java.net.InetAddress
 import java.security.KeyStore
 import java.security.cert.CertificateFactory
-import java.util.Base64
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
@@ -45,13 +45,28 @@ import org.junit.jupiter.api.Test
  * offers a retry config when it rejects it, so the client should retry and succeed with ECH.
  * `disabled` is published with a stale config and the origin offers nothing, so the client
  * should fall back to a handshake without ECH rather than fail.
+ *
+ * Below API 37 the outcome is the same for all three, and asserting it is the reason this suite
+ * runs on the older emulators in the workflow's matrix at all: `android.net.ssl.EchConfigList`
+ * doesn't exist there, so OkHttp has nowhere to put the config list the resolver handed it, and
+ * the only acceptable behaviour is an ordinary handshake to the real name. A version of OkHttp
+ * that instead failed the call — or leaked the public name into SNI — would be a regression on
+ * every Android release before the newest one, which is where most devices are.
+ *
+ * Before API 29 there is no run to have: the fixture origin is TLS 1.3 only, which Android
+ * gained in API 29, so the handshake can't complete for reasons that have nothing to do with
+ * ECH. Those levels skip, and what they still prove is that the library loads and initializes
+ * on them — [EchTestRunner] calls `OkHttp.initialize` before any of this.
  */
 class EncryptedClientHelloTest {
+  /** Whether this device can encrypt a client hello at all. Everything below turns on it. */
+  private val echSupported = Build.VERSION.SDK_INT >= ECH_API_LEVEL
+
   @Test
   fun greenPathAcceptsEncryptedClientHello() {
     val response = fixture().get(GREEN_NAME)
 
-    assertThat(response).contains("\"echAccepted\":true")
+    assertThat(response).contains("\"echAccepted\":$echSupported")
     assertThat(response).contains("\"serverName\":\"$GREEN_NAME\"")
   }
 
@@ -59,7 +74,7 @@ class EncryptedClientHelloTest {
   fun rejectedConfigIsRetriedWithServerConfig() {
     val response = fixture().get(RETRY_NAME)
 
-    assertThat(response).contains("\"echAccepted\":true")
+    assertThat(response).contains("\"echAccepted\":$echSupported")
     assertThat(response).contains("\"serverName\":\"$RETRY_NAME\"")
   }
 
@@ -74,9 +89,12 @@ class EncryptedClientHelloTest {
   private fun fixture(): Fixture {
     val arguments = InstrumentationRegistry.getArguments()
     assumeTrue(arguments.getString("ech") == "true", "requires the host-side ECH fixtures")
-    assumeTrue(Build.VERSION.SDK_INT >= 37, "ECH requires Android API 37")
+    assumeTrue(
+      Build.VERSION.SDK_INT >= TLS_13_API_LEVEL,
+      "the ECH fixture origin is TLS 1.3 only, which Android has from API $TLS_13_API_LEVEL",
+    )
     val dohPort = requireNotNull(arguments.getString("dohPort")).toInt()
-    val caCertificate = Base64.getDecoder().decode(requireNotNull(arguments.getString("caCertificate")))
+    val caCertificate = Base64.decode(requireNotNull(arguments.getString("caCertificate")), Base64.DEFAULT)
     val (sslContext, trustManager) = sslContext(caCertificate)
     return Fixture(dohPort, sslContext, trustManager)
   }
@@ -135,6 +153,12 @@ class EncryptedClientHelloTest {
       sslContext.init(null, arrayOf(trustManager), null)
       return sslContext to trustManager
     }
+
+    /** `android.net.ssl.EchConfigList`, and so OkHttp's Android ECH, arrived in API 37. */
+    private const val ECH_API_LEVEL = 37
+
+    /** The fixture origin sets `MinVersion: tls.VersionTLS13`, and Android has TLS 1.3 from 29. */
+    private const val TLS_13_API_LEVEL = 29
 
     private const val DOH_NAME = "doh.test"
     private const val GREEN_NAME = "green.secret.test"

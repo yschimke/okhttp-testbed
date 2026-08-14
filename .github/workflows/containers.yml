@@ -7,8 +7,11 @@ on:
   pull_request:
   schedule:
     # Daily, so a break in a container image or in a published OkHttp shows up
-    # without anyone pushing to this repo.
-    - cron: '17 6 * * *'
+    # without anyone pushing to this repo. The four scheduled workflows are spread across
+    # the day rather than started together — each one is now several jobs wide, and a
+    # failure is easier to read against a quiet runner queue than against three other
+    # suites' worth of containers.
+    - cron: '17 2 * * *'
   workflow_dispatch:
     inputs:
       okhttpVersion:
@@ -24,7 +27,7 @@ env:
 
 jobs:
   containers:
-    name: containers (${{ matrix.okhttpVersion || 'pinned release' }})
+    name: containers (${{ matrix.okhttpVersion || 'pinned release' }}, JDK ${{ matrix.javaVersion }})
     runs-on: ubuntu-latest
 
     strategy:
@@ -49,6 +52,25 @@ jobs:
             || '[""]'
           ) }}
 
+        # The JDKs OkHttp's users are on, at both ends of the range this repository can test.
+        #
+        # 17 is the floor: OkHttp itself supports Java 8, but the harness around it doesn't —
+        # JUnit 5.14 requires 17 — so 17 is as low as a suite can be run here, and it is what
+        # catches a published artifact that quietly started needing something newer. 25 is the
+        # current LTS and the ceiling. 21 is in the middle because it is the LTS most builds
+        # are on today, and because it is the JDK the Loom finding is about: BasicLoomTest is
+        # `@EnabledForJreRange(min = JAVA_21)`, and JEP 491 changes its answer on 24+, so the
+        # 21 and 25 rows are the before and after of that.
+        #
+        # Per-commit runs stay on one JDK: those runs are about this repository, and the
+        # question of how a published OkHttp behaves across JDKs is a daily one.
+        javaVersion: >-
+          ${{ fromJSON(
+            (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+            && '[17, 21, 25]'
+            || '[21]'
+          ) }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1
@@ -57,7 +79,7 @@ jobs:
         uses: actions/setup-java@v5.7.0
         with:
           distribution: 'temurin'
-          java-version: 21
+          java-version: ${{ matrix.javaVersion }}
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6.3.0
@@ -67,6 +89,7 @@ jobs:
         # every suite should report every run, whatever the others did.
         run: >
           ./gradlew containers:test containers:loomTest containers:hostileTest --continue
+          -PtestJavaVersion=${{ matrix.javaVersion }}
           ${{ matrix.okhttpVersion && format('-PokhttpVersion={0}', matrix.okhttpVersion) || '' }}
 
       # What the XML can't say: which OkHttp version 'pinned' actually resolved to, and
@@ -93,6 +116,7 @@ jobs:
             "label": "${{ matrix.okhttpVersion || 'pinned' }}",
             "okhttpVersion": "$version",
             "platform": "$platform",
+            "variant": "JDK ${{ matrix.javaVersion }}",
             "jobStatus": "${{ job.status }}",
             "runNumber": ${{ github.run_number }},
             "runUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
@@ -109,7 +133,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: container-test-results-${{ matrix.okhttpVersion || 'pinned' }}
+          name: container-test-results-${{ matrix.okhttpVersion || 'pinned' }}-jdk${{ matrix.javaVersion }}
           path: |
             containers/build/test-results/*/*.xml
             containers/build/test-results/run-metadata.json

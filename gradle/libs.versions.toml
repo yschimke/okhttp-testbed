@@ -3,6 +3,8 @@ agp = "9.3.1"
 android-junit5 = "2.0.1"
 androidx-test-runner = "1.7.0"
 assertk = "0.28.1"
+# Backports the Java 8 APIs JUnit 5 needs onto the API 21 emulators in the android-ech matrix.
+desugar-jdk-libs = "2.1.5"
 junit-platform = "1.14.4"
 kotlin = "2.4.10"
 # Must match the mockserver/mockserver image tag; the client refuses to talk to a
@@ -26,6 +28,7 @@ testcontainers = "2.0.5"
 [libraries]
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidx-test-runner" }
 assertk = { module = "com.willowtreeapps.assertk:assertk", version.ref = "assertk" }
+desugar-jdk-libs = { module = "com.android.tools:desugar_jdk_libs", version.ref = "desugar-jdk-libs" }
 junit-jupiter-api = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "org-junit-jupiter" }
 junit-jupiter-engine = { module = "org.junit.jupiter:junit-jupiter-engine", version.ref = "org-junit-jupiter" }
 junit-jupiter-params = { module = "org.junit.jupiter:junit-jupiter-params", version.ref = "org-junit-jupiter" }
