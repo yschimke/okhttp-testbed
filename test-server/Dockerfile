@@ -1,4 +1,4 @@
-FROM golang:1.24-alpine AS build
+FROM golang:1.26-alpine AS build
 
 WORKDIR /src
 # The trailing slash is load-bearing. BuildKit accepts a bare `.` for a multi-file COPY, and
