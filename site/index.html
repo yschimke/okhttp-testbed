@@ -20,6 +20,7 @@
       <a href="topics/tls.html">TLS</a>
       <a href="topics/proxies.html">Proxies</a>
       <a href="topics/loom.html">Virtual threads</a>
+      <a href="topics/test-servers.html">Test servers</a>
       <a href="https://github.com/yschimke/okhttp-testbed">GitHub ↗</a>
     </nav>
   </div>
@@ -47,7 +48,7 @@
     reaches a release.
   </p>
 
-  <h2>Suites</h2>
+  <h2 id="suites">Suites</h2>
   <div class="table-scroll">
     <table id="suite-table"></table>
   </div>
@@ -97,16 +98,21 @@
       <h3>Virtual threads</h3>
       <p>Carrier-thread pinning under Loom, and what JEP 491 changes.</p>
     </a>
+    <a class="topic-card" href="topics/test-servers.html">
+      <h3>Test servers</h3>
+      <p>The public HTTP, TLS and DNS servers client authors test against, and the roadmap for
+        pointing the testbed at them.</p>
+    </a>
   </div>
 
   <h2>How this page is built</h2>
   <p>
-    The <code>containers</code>, <code>android-ech</code> and <code>network</code> workflows each
-    upload the JUnit XML from every task they run, including the tasks that report without failing.
-    The <code>pages</code> workflow rebuilds this page when any of them finishes, collecting the most
-    recent completed run of all three — so a container run finishing doesn't blank the ECH results,
-    or the reverse — converts them to JSON, appends a summary to the history already published here,
-    and redeploys the site. Nothing is committed to the repository: the deployed site is its own
+    The <code>containers</code> and <code>android-ech</code> workflows each upload the JUnit XML
+    from every task they run, including the tasks that report without failing. The
+    <code>pages</code> workflow rebuilds this page when either finishes, collecting the most recent
+    completed run of both — so a container run finishing doesn't blank the ECH results, or the
+    reverse — converts them to JSON, appends a summary to the history already published here, and
+    redeploys the site. Nothing is committed to the repository: the deployed site is its own
     datastore.
   </p>
   <p>

@@ -1,16 +1,13 @@
 name: network
 
-# Everything in this suite talks to a server someone else operates. It runs on the same
-# events as `containers`, but its result is a finding rather than a gate: see
-# `network/build.gradle.kts` and "Suites that report rather than gate" in the README.
 on:
   push:
     branches:
       - main
   pull_request:
   schedule:
-    # Daily, offset from the container workflow so the two aren't competing for runners,
-    # and so a rate limit hit by one isn't hit again minutes later by the other.
+    # Daily, so a change at one of the servers these tests call — or in a published
+    # OkHttp — shows up without anyone pushing to this repo.
     - cron: '43 6 * * *'
   workflow_dispatch:
     inputs:
@@ -31,13 +28,14 @@ jobs:
     runs-on: ubuntu-latest
 
     strategy:
-      # Each version reports independently, as in the containers workflow: the difference
-      # between them is the result we're after.
+      # Each version reports independently. One version failing must not cancel the
+      # other's run, because the difference between them is the result we're after.
       fail-fast: false
       matrix:
-        # An empty entry means the release pinned in libs.versions.toml. The scheduled and
-        # manual runs add the current snapshot; an explicit workflow_dispatch input
-        # overrides both.
+        # An empty entry means the release pinned in libs.versions.toml. As with the
+        # containers workflow, the scheduled and manual runs add the current snapshot;
+        # for this suite that is what covers ECH at all, since the ECH API landed after
+        # 5.4.0 and the suite is left out of the build on versions without it.
         okhttpVersion: >-
           ${{ fromJSON(
             inputs.okhttpVersion && format('["{0}"]', inputs.okhttpVersion)
@@ -59,15 +57,16 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      # No Docker here — what this job needs instead is outbound network, which is the one
-      # thing the container jobs can take for granted and this one cannot.
       - name: Run Network Tests
+        # --continue so a failing suite doesn't stop echTest from running: every suite
+        # should report every run, whatever the others did.
         run: >
-          ./gradlew network:networkTest
+          ./gradlew network:test network:echTest --continue
           ${{ matrix.okhttpVersion && format('-PokhttpVersion={0}', matrix.okhttpVersion) || '' }}
 
       # What the XML can't say: which OkHttp version 'pinned' actually resolved to, and
-      # what the job as a whole did.
+      # what the job as a whole did. The status page names the version under test, so it
+      # has to be recorded by the run rather than guessed from the artifact name.
       - name: Record Run Metadata
         if: always()
         run: |
@@ -87,14 +86,13 @@ jobs:
             "runUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
             "commit": "${{ github.sha }}",
             "event": "${{ github.event_name }}",
-            "finishedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "taskFromPath": true
+            "taskFromPath": true,
+            "finishedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           }
           JSON
 
-      # The layout site/tools/collect_results.py understands: XML under a directory named
-      # for the Gradle task that produced it, so `networkTest` is what classifies the
-      # result as a finding rather than a failure.
+      # Both tasks' XML, including echTest's, which records findings without failing the
+      # build. The status page reads results from here, not from the job's colour.
       - name: Upload Test Results
         if: always()
         uses: actions/upload-artifact@v4

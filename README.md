@@ -15,11 +15,24 @@ Suites
 | Suite         | What it needs               | What it covers                                                      |
 |---------------|-----------------------------|---------------------------------------------------------------------|
 | `containers`  | Docker                      | SOCKS5 and HTTP proxies, TLS via MockServer, virtual threads (Loom)  |
+| `network`     | Outbound network            | ALPN and SNI overrides, Let's Encrypt trust, ECH on the public servers |
 | `android-ech` | Docker, an API 37 emulator  | Encrypted Client Hello over DoH: accepted, retried, and declined     |
-| `network`     | Outbound network            | Public HTTP, TLS and DNS test servers — reports, never gates         |
 
-More is planned for `network` — the HTTP-semantics, badssl and DoH matrices — and for the
-rest of the Android device matrix.
+The `network` suites call servers other people operate — Google, Cloudflare, Let's Encrypt,
+and the ECH test servers at `tls-ech.dev` and `defo.ie`. They came from OkHttp's
+`android-test`, where they were tagged `Remote` and excluded from that build for the same
+reason they are here rather than there: they need the internet, and they can fail for
+reasons that have nothing to do with a change under review.
+
+More of them are planned. The survey they are being drawn from — which public HTTP, TLS and
+DNS test servers exist, what each one is good for, and what it is not — is published as a
+[topic page][test-servers], and broken down into issues under the
+[roadmap tracking issue][roadmap].
+
+The rest of the Android device matrix is still to come. One of OkHttp's `Remote` tests is
+waiting on it and could not move: `AndroidNetworksTest`, which pins a call to a
+`ConnectivityManager` network — that tests an Android platform API, not something a JVM can
+stand in for.
 
 Public API only
 ---------------
@@ -43,7 +56,9 @@ Two things enforce that, rather than leaving it to good intentions:
 Where a test needs something the public API doesn't offer, prefer solving it with the
 container instead of reaching into OkHttp — for example `BasicMockServerTest.trustMockServer()`
 builds a real trust manager from MockServer's own keystore rather than disabling
-verification.
+verification. Where that isn't possible, copy rather than depend: the `network` suites
+carry their own `DelegatingSSLSocketFactory`, copied from `okhttp-testing-support`, because
+that artifact is never published and a dependency on it would tie the suites to a build.
 
 Running locally
 ---------------
@@ -52,21 +67,17 @@ Requires Docker and JDK 21+.
 
 ```
 ./gradlew containers:test containers:loomTest
+./gradlew network:test network:echTest
 ```
 
-`test` covers the container suites and fails the build. `loomTest` runs `BasicLoomTest`
-separately with `ignoreFailures`, because that suite reports on OkHttp rather than on this
-repository — see [Suites that report rather than gate](#suites-that-report-rather-than-gate).
+`test` covers the gating suites and fails the build. `loomTest` and `echTest` run
+`BasicLoomTest` and `EchTest` separately with `ignoreFailures`, because those suites report
+on OkHttp rather than on this repository — see
+[Suites that report rather than gate](#suites-that-report-rather-than-gate).
 
-The `network` suite needs no Docker, only outbound network:
-
-```
-./gradlew network:networkTest
-```
-
-Everything in it reaches a server someone else operates, so all of it runs under
-`ignoreFailures` — the module's `test` task is disabled and `networkTest` is the only way
-to run it.
+The `containers` suites need Docker; the `network` suites need unrestricted outbound
+HTTPS, including to DNS-over-HTTPS at `1.1.1.1`. A network that intercepts TLS will fail
+them for its own reasons — these tests assert on what the peer saw in the handshake.
 
 By default this tests the OkHttp version pinned in `gradle/libs.versions.toml`. To test
 another release, a release candidate, or a snapshot:
@@ -119,22 +130,37 @@ A and AAAA records only, so there is no HTTPS record to carry an ECH config list
 at whatever you like with `-PokhttpVersion`, and drop `ech-okhttp` once a release ships the
 API.
 
-ECH itself is Android-only in OkHttp today: JVM platforms accept the config list and ignore
-it, so there is nothing here for the `containers` suite to assert.
+ECH is Android-only in OkHttp today: JVM platforms accept the config list and ignore it. The
+`network` suite is where that shows up, from the other direction — `EchTest` came from
+OkHttp's `android-test` with its assertions intact, so on the JVM the route assertions pass,
+the assertions about what the server saw fail, and the difference is recorded rather than
+fixed up. See [Suites that report rather than gate](#suites-that-report-rather-than-gate).
+The two ECH suites are not duplicates: `android-ech` proves the client behaviour against a
+fixture nobody else can change, and `network` is what notices when `tls-ech.dev` or `defo.ie`
+does change.
+
+That suite is also the one place a version matters to compilation. `Route.echConfigList` and
+`DnsOverHttps.Builder.includeServiceMetadata` arrived after 5.4.0, so
+`network/build.gradle.kts` leaves `EchTest.kt` out of the source set and disables `echTest`
+below 5.5.0 rather than failing to build. Every other suite compiles against any version —
+that is the rule, and this is the documented exception to it.
 
 CI
 --
 
-The `containers` workflow runs on push, on pull requests, and daily. The daily run is the
-point: it catches breakage that arrives from outside this repository — a container image
-that moved, a proxy that changed behaviour, a regression in a published OkHttp.
+The `containers` and `network` workflows run on push, on pull requests, and daily. The
+daily run is the point: it catches breakage that arrives from outside this repository — a
+container image that moved, a proxy that changed behaviour, a test server that stopped
+offering ECH, a regression in a published OkHttp.
 
-The daily run covers two versions, as separate jobs:
+Each daily run covers two versions, as separate jobs:
 
 | Job                              | Version                              | Runs on                       |
 |----------------------------------|--------------------------------------|-------------------------------|
 | `containers (pinned release)`    | the `okhttp` version in `libs.versions.toml` | every event            |
 | `containers (5.5.0-SNAPSHOT)`    | the current snapshot                 | schedule and manual runs only |
+| `network (pinned release)`       | the `okhttp` version in `libs.versions.toml` | every event            |
+| `network (5.5.0-SNAPSHOT)`       | the current snapshot                 | schedule and manual runs only |
 
 Push and pull request runs test one version, because those runs are about this repository.
 The snapshot job is what makes the daily schedule worth having: a regression in OkHttp's
@@ -144,17 +170,17 @@ A `workflow_dispatch` run with an explicit `okhttpVersion` overrides both and te
 that version.
 
 When OkHttp's main branch moves past 5.5.0, bump the snapshot version in the workflow's
-matrix. Snapshot runs re-resolve the artifact every time — `containers/build.gradle.kts`
+matrix. Snapshot runs re-resolve the artifact every time — each suite's `build.gradle.kts`
 sets `cacheChangingModulesFor(0, "seconds")` for `-SNAPSHOT` versions, since Gradle
 otherwise caches a changing module for 24 hours and a daily job would test yesterday's
 build under today's name.
 
-JUnit XML results are uploaded as artifacts on every run — from both `test` and `loomTest`,
-for each version, as `container-test-results-<version>`, alongside a `run-metadata.json`
-recording which OkHttp version `pinned` actually resolved to — which is what the status page
-is built from. The job runs with `--continue` so one failing suite doesn't rob the
-others of a result, and the matrix runs with `fail-fast: false` so one failing version
-doesn't rob the other.
+JUnit XML results are uploaded as artifacts on every run — from the gating and the reporting
+tasks alike, for each version, as `container-test-results-<version>` and
+`network-test-results-<version>`, alongside a `run-metadata.json` recording which OkHttp
+version `pinned` actually resolved to — which is what the status page is built from. Each job
+runs with `--continue` so one failing suite doesn't rob the others of a result, and the
+matrix runs with `fail-fast: false` so one failing version doesn't rob the other.
 
 The `android-ech` workflow runs on the same events, on its own daily schedule, and uploads
 its results as `android-ech-test-results-<version>`. It runs one version rather than a
@@ -163,14 +189,7 @@ boots an API 37 emulator, so it is slower and more failure-prone than the contai
 that is the price of testing ECH at all, and it is why it is a separate workflow whose
 colour doesn't mask the container suites'.
 
-The `network` workflow runs on the same events and its own daily schedule, on a plain
-runner with no Docker — what it needs instead is outbound network, which is the one thing
-the container jobs can take for granted and it cannot. It runs the same two-version matrix
-as `containers` and uploads `network-test-results-<version>`. Its `networkTest` task carries
-`ignoreFailures`, so a job that reaches an unreachable server still finishes green and the
-failure lands on the status page as a finding.
-
-All three workflows write a `run-metadata.json` into their artifact recording which OkHttp
+Both workflows write a `run-metadata.json` into their artifact recording which OkHttp
 version they actually resolved, and which run produced it. That is what lets the status site
 name the version under test rather than calling it "pinned", and report two workflows'
 results as one picture.
@@ -181,15 +200,15 @@ Status site
 <https://yschimke.github.io/okhttp-testbed/> — the most recent results per OkHttp version,
 per suite, across both workflows, with the failing assertions in full, a history strip, and
 a topic page per area covered (ECH, DNS, TLS, proxies, virtual threads) linking the relevant
-RFCs and the test servers involved.
+RFCs and the test servers involved, and a [survey of the public test servers][test-servers]
+the `network` suite runs against today and the planned ones will grow into.
 
 The site is `site/`, deployed as it sits: plain HTML and CSS, no static site generator, no
 build step. The only generated files are `site/data/latest.json` and `site/data/history.json`.
 
-`.github/workflows/pages.yml` runs when a `containers`, `android-ech` or `network` run
-finishes on `main`. Whichever triggered it, it collects the most recent completed run of
-*all* of them — so a container run finishing doesn't blank the ECH results, or the reverse —
-converts the JUnit
+`.github/workflows/pages.yml` runs when a `containers` or `android-ech` run finishes on
+`main`. Whichever triggered it, it collects the most recent completed run of *both* — so a
+container run finishing doesn't blank the ECH results, or the reverse — converts the JUnit
 XML with `site/tools/collect_results.py`, and deploys. Results are keyed by OkHttp version,
 so a suite from each workflow testing `5.5.0-SNAPSHOT` lands on one card.
 
@@ -201,10 +220,9 @@ published; it is about the pull request, not about the state of the repository.
 Two distinctions the page depends on, both decided when the XML is collected:
 
 - The Gradle task a suite ran under decides whether a failure is **failing** or a
-  **finding**. `test` failing means this repository is red; `loomTest` and `networkTest`
-  failing are recorded findings — about OkHttp, or about a server someone else operates —
-  and the page shows them in amber, see below. A suite's task comes
-  from the artifact layout for the container and network suites, and from `run-metadata.json` for
+  **finding**. `test` failing means this repository is red; `loomTest` failing is a recorded
+  finding about OkHttp, and the page shows it in amber — see below. A suite's task comes
+  from the artifact layout for the container suites, and from `run-metadata.json` for
   `android-ech`, where the XML is laid out by device rather than by task.
 - The version comes from `run-metadata.json`, so the page names `5.4.0` rather than
   "pinned".
@@ -230,14 +248,8 @@ not a broken test, and it shouldn't read as this repository being red — so tho
 under `ignoreFailures`: the assertion stays exactly as written, the failure lands in the
 JUnit XML for the status page, and the build stays green.
 
-Two things are in this category. The whole `network` module is one of them, for a different
-reason than the rest: its tests are about servers this repository doesn't operate, and a rate
-limit at a CDN or a certificate renewed overnight is not this repository being red. Its
-`test` task is disabled and every test runs under `networkTest`, so a suite cannot end up in
-the fatal category there by being written in the wrong file.
-
-The other is `loomTest`. `BasicLoomTest.testHttpsRequest` asserts that no
-virtual thread pins its carrier, and against OkHttp 5.4.0 on JDK 21 one does:
+Two suites are in this category. `BasicLoomTest.testHttpsRequest` asserts that no virtual
+thread pins its carrier, and against OkHttp 5.4.0 on JDK 21 one does:
 
 ```
 VirtualThread[#51]/runnable@ForkJoinPool-1-worker-3 reason:MONITOR
@@ -249,6 +261,14 @@ VirtualThread[#51]/runnable@ForkJoinPool-1-worker-3 reason:MONITOR
 JEP 491 removes this class of pinning on JDK 24+, so the same test should pass there —
 which is exactly the kind of difference this repository exists to record.
 
+`EchTest` is the other. ECH takes two halves: OkHttp reads an ECH config list out of the
+DNS HTTPS record, and the TLS stack encrypts the client hello with it. OkHttp's half works
+on the JVM — the routes carry a config list, which is what the `echConfigList` assertions
+check — but the JDK's TLS stack has no ECH, so the servers report back that the connection
+was not protected and the assertions about what they saw fail. Android does have it from
+API 37, which is why the same test passes in OkHttp's `android-test`. When a JVM TLS stack
+gains ECH, this suite is how we will find out.
+
 Everything else stays fatal. That is deliberate: a fatal `test` task is what caught the
 MockServer client/server version mismatch on the first run that reached a Docker daemon.
 Move a suite into the reporting category only when it is asserting about OkHttp's
@@ -258,14 +278,16 @@ Reading a failure
 -----------------
 
 A red result here does not necessarily mean OkHttp is broken. These tests depend on
-third-party container images and, in future suites, on servers other people operate.
+third-party container images and on servers other people operate.
 Check whether the failure reproduces locally and whether it correlates with a new OkHttp
 version before filing anything upstream.
 
 License
 -------
 
-Apache 2.0, as OkHttp is. The tests in `containers` were moved from the OkHttp repository
-and keep their original copyright headers.
+Apache 2.0, as OkHttp is. The tests in `containers` and `network` were moved from the
+OkHttp repository and keep their original copyright headers.
 
 [okhttp]: https://github.com/square/okhttp
+[test-servers]: https://yschimke.github.io/okhttp-testbed/topics/test-servers.html
+[roadmap]: https://github.com/yschimke/okhttp-testbed/issues/5

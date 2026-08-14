@@ -20,9 +20,8 @@ an Android suite both testing 5.5.0-SNAPSHOT belong on one card, because compari
 is what this repository is for.
 
 The Gradle task a suite ran under decides whether its result gates. `test` failing means
-this repository is red; `loomTest` and `networkTest` failing are recorded findings — about
-OkHttp, or about a server someone else operates — which is why the build stays green. See
-"Suites that report rather than gate" in the README.
+this repository is red; `loomTest` and `echTest` failing are recorded findings about OkHttp,
+which is why the build stays green — see "Suites that report rather than gate" in the README.
 """
 
 from __future__ import annotations
@@ -34,7 +33,7 @@ import sys
 import xml.etree.ElementTree as ElementTree
 
 # Gradle test tasks whose failures are findings about OkHttp rather than breakage here.
-REPORTING_TASKS = {"loomTest", "networkTest"}
+REPORTING_TASKS = {"loomTest", "echTest"}
 
 # How many collections the history keeps. Enough for the trend strip to show a few weeks of
 # daily runs without the file growing without bound.
