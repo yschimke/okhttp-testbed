@@ -232,6 +232,30 @@ against "Quad9 has been unreachable for three days".
 Adding a suite means adding its server to `Endpoint` and annotating the class. Declare what
 the test *depends on*, not everything it touches.
 
+The handshake OkHttp offers
+---------------------------
+
+Every other suite asserts what OkHttp *accepts*. `ClientHelloTest` records what it **sends** —
+the thing CDNs and bot-detection systems key on. A ClientHello that shifts between OkHttp
+releases can change how Cloudflare or Akamai treat every application using it, and "the API
+started returning 403 after we upgraded" is how users find that out today.
+
+How's My SSL answers with the suites, groups and signature algorithms it was offered. The reply
+is stored **verbatim** in `network/build/test-results/clienthello-<task>.json`, uploaded with the
+JUnit XML, and rendered on the status page next to the OkHttp and Java versions that produced it.
+Storing it unedited is deliberate: reformatting would be the one reliable way to lose the field
+nobody thought to extract.
+
+Almost none of it is asserted. The offered suite list is the platform's decision far more than
+OkHttp's, so pinning it would turn every JDK update into a failed test rather than the
+observation it should be. Two things are asserted, and they are the two the issue names: the
+negotiated version is at least 1.2, and the rating is not "Bad". `Improvable` — what a client
+still offering CBC suites for compatibility gets — is recorded, not failed.
+
+It calls the service once per scheduled run. The `network` workflow does not run on pull
+requests, which is what makes that true rather than aspirational: How's My SSL asks to be used
+only for clients you control, and a daily request is that.
+
 The ECH suite
 -------------
 
