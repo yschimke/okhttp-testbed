@@ -142,6 +142,7 @@ function renderSuiteTable(snapshot) {
     el("th", { textContent: "Suite" }),
     el("th", { textContent: "Workflow" }),
     el("th", { textContent: "Gradle task" }),
+    el("th", { textContent: "Severity" }),
     ...versions.map((v) => el("th", { textContent: v.okhttpVersion })),
   ]);
 
@@ -151,12 +152,16 @@ function renderSuiteTable(snapshot) {
       el("td", { className: "suite" }, any ? suiteLink(any) : name),
       el("td", { className: "mono", textContent: any ? any.workflow : "" }),
       el("td", { className: "mono", textContent: any ? any.task : "" }),
+      el("td", {
+        className: "card-label",
+        textContent: any ? (any.reporting ? (any.severity ?? "watch") : "gates") : "",
+      }),
       ...versions.map((version) => {
         const suite = version.suites.find((s) => s.name === name);
         if (!suite) return el("td", {}, el("span", { className: "pill unknown", textContent: "—" }));
         const expected = suite.expected ?? 0;
         const status = suite.failed
-          ? suite.reporting ? "finding" : "failed"
+          ? suite.reporting && suite.severity !== "critical" ? "finding" : "failed"
           : expected ? "expected"
           : suite.passed ? "passed" : "skipped";
         return el("td", {}, [
@@ -190,10 +195,14 @@ function renderFailures(snapshot) {
     for (const suite of version.suites) {
       for (const testCase of suite.cases) {
         if (testCase.status === "passed") continue;
+        // Severity decides how loudly an unexpected failure is shown. A critical suite is one
+        // this repository is currently for, so its surprises are red even though it reports
+        // rather than gates; a watch suite stays amber, because the far end is as likely a
+        // cause as the client. Expected failures and skips are unaffected by either.
         const kind =
           testCase.status === "skipped" ? "skipped"
           : testCase.status === "expected" ? "expected"
-          : suite.reporting ? "finding"
+          : suite.reporting && suite.severity !== "critical" ? "finding"
           : "failed";
 
         const source = sourceUrl(suite);
