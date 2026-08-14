@@ -283,6 +283,15 @@ The page leads with the results — the current status, then what failed, then t
 then endpoint availability, then history. The explanation of what any of it means sits under
 those, collapsed: this is a page you return to for the state of things, not to read.
 
+It also lists the open issues, grouped by area. That comes from the GitHub API on every build
+rather than from an artifact, so it is current even on a build that collected no test results,
+and the grouping comes from each issue's `area:` label — `area:http`, `area:tls`, `area:dns`,
+`area:ech`, `area:infrastructure` — rather than from a table in the site. **Label a new issue
+and it appears under the right heading with nothing else to change.** An issue with no `area:`
+label still shows, under "Unfiled", because dropping it would make the section quietly wrong
+rather than visibly incomplete; the `tracking` label marks the roadmap issue itself, which is
+rendered as a link above the groups rather than as an item in them.
+
 Suite names on it link to the test that produced them. The link is derived from the workflow
 and the class name rather than recorded, so a new suite is linked the day it lands; the cost
 is that moving a module without updating `SOURCE_ROOTS` in `site/assets/status.js` gives a

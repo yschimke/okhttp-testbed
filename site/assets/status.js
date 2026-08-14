@@ -312,6 +312,83 @@ function renderHistory(history) {
   }
 }
 
+/*
+ * The open issues, grouped by their `area:` label.
+ *
+ * Area comes from the label rather than from a table here, so a new issue appears under the
+ * right heading the moment it is filed and labelled — nothing to keep in step. An issue with no
+ * `area:` label still shows up, under "unfiled", because silently dropping it would make this
+ * section quietly wrong rather than visibly incomplete.
+ */
+const AREA_ORDER = ["infrastructure", "http", "tls", "dns", "ech"];
+
+const AREA_TITLES = {
+  infrastructure: "Infrastructure",
+  http: "HTTP",
+  tls: "TLS",
+  dns: "DNS",
+  ech: "Encrypted Client Hello",
+  unfiled: "Unfiled",
+};
+
+function renderIssues(issues) {
+  const labelsOf = (issue) => (issue.labels || []).map((l) => l.name);
+
+  // The tracking issue is the roadmap itself, not an item on it.
+  const tracking = issues.filter((i) => labelsOf(i).includes("tracking"));
+  const items = issues.filter((i) => !labelsOf(i).includes("tracking"));
+
+  const areaOf = (issue) => {
+    const label = labelsOf(issue).find((name) => name.startsWith("area:"));
+    return label ? label.slice("area:".length) : "unfiled";
+  };
+
+  const areas = [...new Set(items.map(areaOf))].sort((a, b) => {
+    const rank = (x) => {
+      const i = AREA_ORDER.indexOf(x);
+      return i === -1 ? AREA_ORDER.length : i;
+    };
+    return rank(a) - rank(b) || a.localeCompare(b);
+  });
+
+  const groups = areas.map((area) => {
+    const inArea = items.filter((i) => areaOf(i) === area).sort((a, b) => a.number - b.number);
+    return el("section", { className: "issue-group" }, [
+      el("h3", {}, [
+        AREA_TITLES[area] || area,
+        el("span", { className: "card-label", textContent: ` · ${plural(inArea.length, "issue")}` }),
+      ]),
+      el(
+        "ul",
+        { className: "issue-list" },
+        inArea.map((issue) =>
+          el("li", {}, [
+            el("a", { href: issue.url, textContent: issue.title }),
+            el("span", { className: "card-label mono", textContent: ` #${issue.number}` }),
+          ]),
+        ),
+      ),
+    ]);
+  });
+
+  const target = document.getElementById("roadmap");
+  if (!items.length && !tracking.length) {
+    target.replaceChildren(el("p", { textContent: "No open issues." }));
+    return;
+  }
+
+  target.replaceChildren(
+    ...tracking.map((issue) =>
+      el("p", { className: "note" }, [
+        "Tracked as a whole in ",
+        el("a", { href: issue.url, textContent: issue.title }),
+        ` (#${issue.number}).`,
+      ]),
+    ),
+    el("div", { className: "issue-groups" }, groups),
+  );
+}
+
 async function loadJson(path) {
   const response = await fetch(path, { cache: "no-cache" });
   if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
@@ -347,5 +424,11 @@ async function loadJson(path) {
     renderHistory(await loadJson("data/history.json"));
   } catch {
     renderHistory({ runs: [] });
+  }
+
+  try {
+    renderIssues(await loadJson("data/issues.json"));
+  } catch {
+    renderIssues([]);
   }
 })();
