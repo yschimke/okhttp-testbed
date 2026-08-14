@@ -52,8 +52,40 @@ val loomTestPattern = "**/BasicLoomTest.class"
 // malformed response fails at all, stays fatal.
 val hostileTestPattern = "**/HostileRetryTest.class"
 
+// MockServer is the one thing on this classpath that isn't Java 8 bytecode: the client's own
+// classes are compiled for 17, so on an older test JDK every suite that touches it dies during
+// class resolution — and it takes the whole task with it, because JUnit resolves the classes it
+// found before it runs any of them, so filtering by name doesn't help.
+//
+// The alternative to excluding them is not running this module below 17 at all, which would
+// give up the suites that have nothing to do with MockServer. go-httpbin, the bad chains and
+// the hostile responses all run against this repository's own containers, and how OkHttp
+// handles them on Java 8 is a question worth an answer.
+val mockServerTestPattern =
+  listOf(
+    "**/BasicMockServerTest.class",
+    "**/BasicProxyTest.class",
+    "**/SocksProxyTest.class",
+  )
+
+// `-PtestJavaVersion`, as the root build reads it. BasicLoomTest is already excluded from
+// `test` and is `@EnabledForJreRange(min = JAVA_21)` besides, so it needs nothing here.
+val testJavaVersion =
+  providers
+    .gradleProperty("testJavaVersion")
+    .map(String::toInt)
+    .getOrElse(21)
+
+val mockServerRuns = testJavaVersion >= 17
+
 tasks.test {
   exclude(loomTestPattern, hostileTestPattern)
+  if (!mockServerRuns) {
+    exclude(mockServerTestPattern)
+    doFirst {
+      logger.lifecycle("Skipping the MockServer suites: its client is Java 17 bytecode, and this run is on $testJavaVersion")
+    }
+  }
 }
 
 val loomTest = tasks.register<Test>("loomTest") {
@@ -64,6 +96,12 @@ val loomTest = tasks.register<Test>("loomTest") {
   testClassesDirs = testSourceSet.output.classesDirs
   classpath = testSourceSet.runtimeClasspath
   include(loomTestPattern)
+
+  // Virtual threads are the whole subject, and BasicLoomTest says so itself with
+  // `@EnabledForJreRange(min = JAVA_21)`. Below that the task can only produce an empty run —
+  // or worse, since the class it would load reaches MockServer, a resolution failure dressed
+  // up as a Loom result.
+  enabled = testJavaVersion >= 21
 
   ignoreFailures = true
 }

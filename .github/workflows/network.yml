@@ -91,17 +91,30 @@ jobs:
             || '["", "5.5.0-SNAPSHOT"]'
           ) }}
 
-        # The same three JDKs the container suites run, and here the axis is the point rather
-        # than a precaution: what these suites measure is largely the JDK's own TLS stack. 17
-        # is the floor the harness allows (JUnit 5.14 needs it), 25 is the current LTS, and 21
-        # is the LTS in between. `echTest` reports how much of ECH works on the JVM, which is a
-        # question about the runtime — a JDK that gained a way to encrypt a client hello would
-        # show up as that row turning green, and nothing else in this repository would notice.
+        # The same JDKs the container suites run, and here the axis is the point rather than a
+        # precaution: what these suites measure is largely the JDK's own TLS stack. 8 is
+        # OkHttp's own baseline — and reachable here because `testJavaVersion` compiles for the
+        # target and runs the tests on it, so Gradle's need for 17 doesn't set the floor —
+        # while 25 is the current LTS and the ceiling. `echTest` reports how much of ECH works
+        # on the JVM, which is a question about the runtime: a JDK that gained a way to encrypt
+        # a client hello would show up as that row turning green, and nothing else in this
+        # repository would notice.
         #
-        # This costs the public servers three passes a day where it used to cost one. That is
-        # still a handful of requests each, and bounded by the schedule the way the whole
-        # module is: the reason these suites don't run per commit is unchanged.
-        javaVersion: [17, 21, 25]
+        # This costs the public servers more passes a day than it used to. Each is still a
+        # handful of requests, and bounded by the schedule the way the whole module is — the
+        # reason these suites don't run per commit is unchanged.
+        javaVersion: [8, 11, 17, 21, 25]
+
+        # The old JDKs test the release and not the snapshot. What they are asked is whether
+        # the artifact people can depend on today still works where they are, which the release
+        # answers; the snapshot exists to catch a regression before it ships, and that is worth
+        # knowing on the JDKs a release would be adopted on. It also keeps the daily cost to
+        # other people's servers to eight passes rather than ten.
+        exclude:
+          - okhttpVersion: '5.5.0-SNAPSHOT'
+            javaVersion: 8
+          - okhttpVersion: '5.5.0-SNAPSHOT'
+            javaVersion: 11
 
     steps:
       - name: Checkout
@@ -111,7 +124,13 @@ jobs:
         uses: actions/setup-java@v5.7.0
         with:
           distribution: 'temurin'
-          java-version: ${{ matrix.javaVersion }}
+          # Two of them. Gradle needs 17 or newer to run at all, so on the older rows the JDK
+          # under test cannot also be the one running the build — 21 is JAVA_HOME because it is
+          # last, and the toolchain named on the Gradle line below is what the suites are
+          # compiled for and run on.
+          java-version: |
+            ${{ matrix.javaVersion }}
+            21
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6.3.0
@@ -132,6 +151,7 @@ jobs:
         run: >
           ./gradlew network:networkTest network:echTest network:echConscryptTest --continue
           -PtestJavaVersion=${{ matrix.javaVersion }}
+          -Porg.gradle.java.installations.fromEnv=JAVA_HOME_${{ matrix.javaVersion }}_X64,JAVA_HOME_21_X64
           ${{ matrix.okhttpVersion && format('-PokhttpVersion={0}', matrix.okhttpVersion) || '' }}
 
       # What the XML can't say: which OkHttp version 'pinned' actually resolved to, and
@@ -147,7 +167,11 @@ jobs:
           # What this actually ran on. Measured rather than written down: a runner image bump
           # or a toolchain change should show up on the status page as a different platform,
           # not as the same string next to different results.
-          props=$(java -XshowSettings:properties -version 2>&1)
+          #
+          # Asked of the JDK under test rather than of JAVA_HOME, which since the toolchain
+          # split is the one running Gradle and would report the same platform for every row.
+          java_home_variable="JAVA_HOME_${{ matrix.javaVersion }}_X64"
+          props=$("${!java_home_variable}/bin/java" -XshowSettings:properties -version 2>&1)
           prop() { printf '%s\n' "$props" | sed -n "s/^ *$1 = //p" | head -1; }
           platform="$(prop java.vendor) JDK $(prop java.version) · $(prop os.arch)"
 

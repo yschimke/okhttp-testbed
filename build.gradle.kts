@@ -1,4 +1,6 @@
 import org.gradle.language.base.plugins.LifecycleBasePlugin
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
 plugins {
   alias(libs.plugins.kotlin.jvm) apply false
@@ -6,11 +8,28 @@ plugins {
   alias(libs.plugins.android.junit5) apply false
 }
 
+// The JDK the suites *run* on: what a user's application would be running when it calls the
+// OkHttp under test. `./gradlew containers:test -PtestJavaVersion=8`, and the CI matrices.
 val testJavaVersion =
   providers
     .gradleProperty("testJavaVersion")
     .map(String::toInt)
     .getOrElse(21)
+
+// The JDK that *compiles* the suites, which is a different question and deliberately not the
+// same setting. OkHttp supports Java 8 and nothing on the test classpath disagrees — JUnit 5,
+// Testcontainers, assertk and OkHttp itself are all Java 8 bytecode — but Gradle 9 needs 17 to
+// run at all, so "run the suite on 8" cannot mean "build the whole thing on 8". It means
+// compile with a modern compiler and target 8: `release` and `jvmTarget` below pin the
+// bytecode, `-Xjdk-release` pins the API signatures so a call that doesn't exist on the target
+// fails here rather than as a NoSuchMethodError on the runner.
+//
+// Above 21 the compiler has to be the newer one — javac cannot target a release it postdates —
+// so this tracks the test JDK upwards and stops on the way down.
+val compileJavaVersion = maxOf(testJavaVersion, 21)
+
+// Kotlin spells Java 8 "1.8" and everything since by its number.
+val jvmTargetName = if (testJavaVersion == 8) "1.8" else testJavaVersion.toString()
 
 // Packages a suite must not touch. The testbed exists to test OkHttp the way its users
 // get it — the published artifact's public API. Anything below reaches past that, either
@@ -83,7 +102,21 @@ subprojects {
   plugins.withId("org.jetbrains.kotlin.jvm") {
     configure<JavaPluginExtension> {
       toolchain {
-        languageVersion.set(JavaLanguageVersion.of(testJavaVersion))
+        languageVersion.set(JavaLanguageVersion.of(compileJavaVersion))
+      }
+    }
+
+    tasks.withType<JavaCompile>().configureEach {
+      options.release.set(testJavaVersion)
+    }
+
+    tasks.withType<KotlinJvmCompile>().configureEach {
+      compilerOptions {
+        jvmTarget.set(JvmTarget.fromTarget(jvmTargetName))
+        // The half `jvmTarget` doesn't cover. Without this the bytecode is right and the
+        // compiler still resolves against the toolchain's own JDK, so a suite could call
+        // something added after the target and only find out on the runner.
+        freeCompilerArgs.add("-Xjdk-release=$jvmTargetName")
       }
     }
   }
@@ -149,6 +182,15 @@ subprojects {
   }
 
   tasks.withType<Test>().configureEach {
+    // The other half of the split. Compiling for Java 8 says the bytecode would load there;
+    // only running on Java 8 says OkHttp works there, and the difference between those two
+    // claims is most of what this repository exists to measure.
+    javaLauncher.set(
+      project.extensions.getByType<JavaToolchainService>().launcherFor {
+        languageVersion.set(JavaLanguageVersion.of(testJavaVersion))
+      },
+    )
+
     dependsOn(checkPublicApiOnly)
 
     // Cheap, and it runs where it matters: a suite about to start a pinned image is exactly

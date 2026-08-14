@@ -170,12 +170,31 @@ One wrinkle worth recording, since it will catch somebody: **the go-httpbin imag
 Running locally
 ---------------
 
-Requires Docker and JDK 21+. `-PtestJavaVersion` picks the JDK a suite compiles and runs
-against, which is how CI covers more than one:
+Requires Docker and JDK 21+ to run the build. `-PtestJavaVersion` picks the JDK the suites
+are *run* on, which is a separate thing and is how CI covers more than one:
 
 ```
-./gradlew containers:test -PtestJavaVersion=17
+./gradlew containers:test -PtestJavaVersion=8
 ```
+
+The two are separate because they have to be. OkHttp supports Java 8 and so does everything
+on the test classpath, but Gradle 9 needs 17 to run at all — so "run the suite on 8" cannot
+mean "build the whole thing on 8". The root build compiles with the newer JDK and targets the
+older one (`release`, `jvmTarget`, and `-Xjdk-release` so an API that doesn't exist on the
+target fails at compile time rather than as a `NoSuchMethodError` on the runner), then points
+the test task's `javaLauncher` at the JDK under test. Compiling for Java 8 says the bytecode
+would load there; only running on Java 8 says OkHttp works there.
+
+The JDK has to be installed and visible to Gradle's toolchain detection. In CI `setup-java`
+installs it and the workflow names it with `org.gradle.java.installations.fromEnv`; locally,
+`-Porg.gradle.java.installations.paths=/path/to/jdk8` will do.
+
+One suite can't come along: **MockServer's client is Java 17 bytecode**, the only thing on
+the classpath that isn't Java 8. Below 17 the suites that use it — `BasicMockServerTest`,
+`BasicProxyTest`, `SocksProxyTest` — are excluded from `test`, because JUnit resolves the
+classes it found before running any of them and one unloadable class fails the whole task
+rather than itself. The suites that run against this repository's own containers are
+unaffected, which is most of the module.
 
 ```
 ./gradlew containers:test containers:loomTest containers:hostileTest
@@ -406,9 +425,9 @@ once. They run on the schedule, and on demand:
 | Job                              | Version                              | Runs on                       |
 |----------------------------------|--------------------------------------|-------------------------------|
 | `containers (pinned release, JDK 21)` | the `okhttp` version in `libs.versions.toml` | every event       |
-| `containers (…, JDK 17 · 21 · 25)` | the pinned release and the snapshot | schedule and manual runs only |
+| `containers (…, JDK 8 · 11 · 17 · 21 · 25)` | the snapshot on 17 and up, the pinned release on all five | schedule and manual runs only |
 | `network / compile`              | the `okhttp` version in `libs.versions.toml` | push and pull request  |
-| `network (…, JDK 17 · 21 · 25)`  | the pinned release and the snapshot  | schedule and manual runs only |
+| `network (…, JDK 8 · 11 · 17 · 21 · 25)` | the snapshot on 17 and up, the pinned release on all five | schedule and manual runs only |
 | `android-ech (…, API 21 · 29 · 34 · 37)` | the snapshot                 | API 37 on every event, the rest on schedule and manual runs only |
 
 What keeps the network module honest between scheduled runs is `network / compile`, which
@@ -433,7 +452,7 @@ commit here and isn't worth asking more than once a day:
 
 | Axis        | Daily coverage | Why those                                                    |
 |-------------|----------------|--------------------------------------------------------------|
-| JDK         | 17, 21, 25     | 17 is the floor: OkHttp itself supports Java 8, but the harness around it doesn't — JUnit 5.14 needs 17 — so 17 is as low as a suite can run here. 25 is the current LTS and the ceiling. 21 is the LTS most builds are on, and the one the Loom finding is about: `BasicLoomTest` is `@EnabledForJreRange(min = JAVA_21)`, and JEP 491 changes its answer on 24+, so the 21 and 25 rows are the before and after of that. Java 26 is out and would work — Kotlin 2.4 targets it — but the LTS ceiling is the one users are on |
+| JDK         | 8, 11, 17, 21, 25 | 8 is the floor, because it is OkHttp's: JUnit 5, Testcontainers, assertk and OkHttp are all Java 8 bytecode, and the toolchain split above is what stops Gradle's own need for 17 setting the floor instead. 25 is the current LTS and the ceiling. 11 and 17 are the LTS releases applications are still on. 21 earns its place twice over — it is the LTS most builds are on, and the one the Loom finding is about: `BasicLoomTest` is `@EnabledForJreRange(min = JAVA_21)`, and JEP 491 changes its answer on 24+, so the 21 and 25 rows are the before and after of that. Java 26 is out and would work — Kotlin 2.4 targets it — but the LTS ceiling is the one users are on. 8 and 11 test the pinned release only: what they are asked is whether the artifact people can depend on today still works where they are |
 | Android API | 21, 29, 34, 37 | 21 is the module's `minSdk` and OkHttp 5's. 29 is the first level with TLS 1.3, and so the first that can reach the fixture at all. 34 is where most devices in the field are. 37 is where ECH exists. What each level actually establishes is in the table under [The ECH suite](#the-ech-suite) |
 
 Four scheduled workflows, spread across the day rather than started together — `containers`
