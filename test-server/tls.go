@@ -30,6 +30,11 @@ type certificates struct {
 	caPEM    []byte
 	selfMade bool
 	hosts    []string
+
+	// Chains that must be rejected, one per listener. Empty when a certificate was supplied:
+	// minting them needs the fixture CA's signing key, which a deployment holding a real
+	// certificate does not have.
+	badChains []badChain
 }
 
 func loadCertificates() (*certificates, error) {
@@ -55,7 +60,17 @@ func loadCertificates() (*certificates, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &certificates{leaf: leaf, caPEM: caPEM, selfMade: true, hosts: hosts}, nil
+	badChains, err := newBadChains(caCert, caKey, hosts)
+	if err != nil {
+		return nil, err
+	}
+	return &certificates{
+		leaf:      leaf,
+		caPEM:     caPEM,
+		selfMade:  true,
+		hosts:     hosts,
+		badChains: badChains,
+	}, nil
 }
 
 // The names and addresses the generated leaf covers. Deployments add their own hostname
@@ -96,27 +111,66 @@ func newCA() (*x509.Certificate, *ecdsa.PrivateKey, []byte, error) {
 	return cert, key, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), nil
 }
 
+func newKey() (*ecdsa.PrivateKey, error) {
+	return ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+}
+
+// How a leaf differs from the ordinary one. The zero value is the good certificate: valid from
+// an hour ago for a year, covering `hosts`. The bad chains in badchains.go are exactly the
+// departures from that, one field at a time.
+type leafOptions struct {
+	hosts     []string
+	notBefore time.Time
+	notAfter  time.Time
+}
+
 func newLeaf(caCert *x509.Certificate, caKey *ecdsa.PrivateKey, hosts []string) (tls.Certificate, error) {
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	return newLeafWith(caCert, caKey, leafOptions{hosts: hosts})
+}
+
+// A leaf signed by the given issuer, or self-signed when the issuer is nil.
+//
+// The returned certificate carries the leaf only, never the issuer: the good leaf is signed
+// directly by the root, so there is nothing to send, and `incomplete-chain` depends on the
+// intermediate being left out. Anything wanting a complete path has to add it deliberately.
+func newLeafWith(caCert *x509.Certificate, caKey *ecdsa.PrivateKey, opts leafOptions) (tls.Certificate, error) {
+	key, err := newKey()
 	if err != nil {
 		return tls.Certificate{}, err
 	}
+
+	notBefore, notAfter := opts.notBefore, opts.notAfter
+	if notBefore.IsZero() {
+		notBefore = time.Now().Add(-time.Hour)
+	}
+	if notAfter.IsZero() {
+		notAfter = time.Now().AddDate(1, 0, 0)
+	}
+
 	template := &x509.Certificate{
 		SerialNumber: serialNumber(),
-		Subject:      pkix.Name{CommonName: hosts[0]},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().AddDate(1, 0, 0),
+		Subject:      pkix.Name{CommonName: opts.hosts[0]},
+		NotBefore:    notBefore,
+		NotAfter:     notAfter,
 		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
-	for _, host := range hosts {
+	for _, host := range opts.hosts {
 		if ip := net.ParseIP(host); ip != nil {
 			template.IPAddresses = append(template.IPAddresses, ip)
 		} else {
 			template.DNSNames = append(template.DNSNames, host)
 		}
 	}
-	der, err := x509.CreateCertificate(rand.Reader, template, caCert, &key.PublicKey, caKey)
+
+	// A nil issuer means the leaf signs itself: the self-signed chain, where the certificate is
+	// its own issuer and so leads to no anchor at all.
+	issuer, issuerKey := caCert, caKey
+	if issuer == nil {
+		issuer, issuerKey = template, key
+	}
+
+	der, err := x509.CreateCertificate(rand.Reader, template, issuer, &key.PublicKey, issuerKey)
 	if err != nil {
 		return tls.Certificate{}, err
 	}
@@ -163,8 +217,16 @@ func perVersionListeners() []versionListener {
 }
 
 func (s *server) tlsServer(addr string, versions tlsVersions, http2 bool) *http.Server {
+	return s.tlsServerWith(addr, versions, http2, s.certs.leaf)
+}
+
+// The same server presenting a certificate of the caller's choosing, which is how the
+// bad-chain listeners differ from the good one. Everything else — the ClientHello capture, the
+// version pinning, the client-certificate policy — is deliberately identical, so that the
+// certificate is the only variable.
+func (s *server) tlsServerWith(addr string, versions tlsVersions, http2 bool, cert tls.Certificate) *http.Server {
 	config := &tls.Config{
-		Certificates: []tls.Certificate{s.certs.leaf},
+		Certificates: []tls.Certificate{cert},
 		MinVersion:   tls.VersionTLS12,
 		// Client certificates are accepted but never required, so /tls can report whether one
 		// was offered without the endpoint becoming unusable to a client that has none.

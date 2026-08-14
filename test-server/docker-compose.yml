@@ -21,6 +21,12 @@ services:
       - "${TLS11_PORT:-8411}:8411"
       - "${TLS12_PORT:-8412}:8412"
       - "${TLS13_PORT:-8413}:8413"
+      # A port per chain that must be rejected — the local half of the badssl matrix.
+      - "${BADCHAIN_EXPIRED_PORT:-8420}:8420"
+      - "${BADCHAIN_WRONG_HOST_PORT:-8421}:8421"
+      - "${BADCHAIN_SELF_SIGNED_PORT:-8422}:8422"
+      - "${BADCHAIN_UNTRUSTED_ROOT_PORT:-8423}:8423"
+      - "${BADCHAIN_INCOMPLETE_CHAIN_PORT:-8424}:8424"
 
   # HTTP semantics: the endpoint vocabulary httpbin defined, as a Go implementation with no
   # dependencies outside the standard library. Replaces httpbin.org and httpbingo.org, which

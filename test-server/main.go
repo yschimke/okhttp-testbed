@@ -119,6 +119,26 @@ func main() {
 		s.shutdownWith(ctx, srv)
 	}
 
+	// A listener per rejectable chain, the local half of the badssl matrix. Each one differs
+	// from the https listener in exactly one way — the certificate it presents — so a client
+	// refusing one of these and accepting https has said something specific. HTTP/1.1 only:
+	// what is under test is the handshake, and none of these should reach a request.
+	for _, chain := range s.certs.badChains {
+		addr := badChainAddr(chain.name)
+		if addr == "" {
+			continue
+		}
+		s.addListener(listener{
+			Name: "badchain-" + chain.name, Addr: addr, TLS: true,
+			MinVersion: "TLSv1.2", MaxVersion: "TLSv1.3", ALPN: "http/1.1",
+			Note: chain.why,
+		})
+		srv := s.tlsServerWith(addr, tlsVersions{}, false, chain.certificate)
+		name := "badchain-" + chain.name
+		serve(name, func() error { return srv.ListenAndServeTLS("", "") })
+		s.shutdownWith(ctx, srv)
+	}
+
 	// The raw listener, which is not an HTTP server: it echoes the request head back byte for
 	// byte. net/http canonicalises header names and drops their order, so /anything reports
 	// what Go parsed rather than what OkHttp sent. This is the only endpoint that reports the

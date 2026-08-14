@@ -39,11 +39,12 @@ Two of them, both containers, both here rather than depended on:
 | `ech-fixture` | The origin and DoH resolver the `android-ech` suite runs against. See below.          |
 | `test-server` | The testbed's own HTTP and TLS server, and the compose stack around it.               |
 
-`test-server` is what the suites will assert positive results against, and the one endpoint
-that reports what a client's handshake actually looked like: a CA it generates itself so a
+`test-server` is what the suites assert both positive and negative results against, and the
+one endpoint that reports what a client's handshake actually looked like: a CA it generates itself so a
 test can assert a chain *is* accepted, `/tls` reporting the negotiated handshake and the
-ClientHello it came from, a port per TLS version the way badssl.com does it, and a set of
-responses that are wrong on purpose — resets, truncated bodies, invalid framing. It is a Go
+ClientHello it came from, a port per TLS version the way badssl.com does it, a port per chain that
+must be *rejected* — expired, wrong host, self-signed, untrusted root, incomplete — and a set
+of responses that are wrong on purpose: resets, truncated bodies, invalid framing. It is a Go
 program with nothing outside the standard library behind it, deliberately not built on
 OkHttp, because a server sharing the client's framing and TLS stack cannot say whether that
 client is acceptable to anything else. It ships alongside pinned `go-httpbin` and Caddy
@@ -83,6 +84,13 @@ Two things enforce that, rather than leaving it to good intentions:
   task, which `check` doesn't cover. Extend `forbiddenImports` in the root
   `build.gradle.kts` as new dependencies arrive.
 
+Where a test needs something the public API doesn't offer, prefer solving it with the
+container instead of reaching into OkHttp — for example `BasicMockServerTest.trustMockServer()`
+builds a real trust manager from MockServer's own keystore rather than disabling
+verification. Where that isn't possible, copy rather than depend: the `network` suites
+carry their own `DelegatingSSLSocketFactory`, copied from `okhttp-testing-support`, because
+that artifact is never published and a dependency on it would tie the suites to a build.
+
 One pin per image
 -----------------
 
@@ -104,13 +112,6 @@ places.
 One wrinkle worth recording, since it will catch somebody: **the go-httpbin image tag has no
 `v`, but it used to.** Releases through 2.21 were published both ways, later ones only without
 — so `v2.16.1` and `2.16.1` both resolve, while `v2.25.0` does not exist at all.
-
-Where a test needs something the public API doesn't offer, prefer solving it with the
-container instead of reaching into OkHttp — for example `BasicMockServerTest.trustMockServer()`
-builds a real trust manager from MockServer's own keystore rather than disabling
-verification. Where that isn't possible, copy rather than depend: the `network` suites
-carry their own `DelegatingSSLSocketFactory`, copied from `okhttp-testing-support`, because
-that artifact is never published and a dependency on it would tie the suites to a build.
 
 Running locally
 ---------------
