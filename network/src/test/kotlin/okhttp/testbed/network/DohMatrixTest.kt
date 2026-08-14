@@ -17,6 +17,7 @@ package okhttp.testbed.network
 
 import assertk.assertThat
 import assertk.assertions.isEmpty
+import java.io.IOException
 import java.net.UnknownHostException
 import okhttp.testbed.network.DohMatrixReport.Answer
 import okhttp.testbed.network.DohMatrixReport.Outcome
@@ -47,8 +48,11 @@ class DohMatrixTest {
         }
       }
 
-    val answered = row.filterValues { it.outcome != Outcome.UNAVAILABLE }
-    assumeTrue(answered.isNotEmpty()) { "no resolver in the matrix is reachable" }
+    // Judged only on the resolvers that actually answered a DNS question. Unreachable is an
+    // outage, and an HTTP error is the resolver failing rather than the name — both are recorded
+    // and neither is evidence about the name, so neither is asserted on.
+    val answered = row.filterValues { it.outcome !in setOf(Outcome.UNAVAILABLE, Outcome.ERRORED) }
+    assumeTrue(answered.isNotEmpty()) { "no resolver in the matrix answered" }
 
     val wrong =
       when (name.expectation) {
@@ -84,6 +88,12 @@ class DohMatrixTest {
       // answer and OkHttp raises this. The addresses column is what tells them apart by eye —
       // a filtered name at some resolvers is a name that answers at others.
       Answer(Outcome.UNRESOLVED, detail = e.message.orEmpty())
+    } catch (e: IOException) {
+      // Not a DNS answer at all. Some resolvers turn a validation failure into an HTTP 502, which
+      // is how this outcome was discovered rather than designed: `sigfail` erroring at one
+      // resolver and resolving at another is a real difference, and calling it "no answer" would
+      // have filed it under the wrong heading.
+      Answer(Outcome.ERRORED, detail = e.message.orEmpty())
     }
   }
 
@@ -112,5 +122,21 @@ class DohMatrixTest {
 
     /** Carries an `HTTPS` record, so a resolver that mishandles one shows up here first. */
     ECH_ENABLED("cloudflare-ech.com", Expectation.RECORD_ONLY),
+
+    /**
+     * Correctly signed, and the control for the next one: a resolver that cannot answer this is
+     * broken rather than strict.
+     */
+    DNSSEC_SIGNED("sigok.ippacket.stream", Expectation.EVERYONE_RESOLVES),
+
+    /**
+     * Deliberately mis-signed, which is how this matrix answers "who validates DNSSEC".
+     *
+     * A validating resolver withholds an answer; one that does not validate hands over the
+     * address. Both are defensible positions and neither is OkHttp's doing, so it is recorded
+     * rather than judged — but it is worth knowing which resolver in the matrix is which, because
+     * it explains a name that resolves at one and not another with no filtering involved.
+     */
+    DNSSEC_BOGUS("sigfail.ippacket.stream", Expectation.RECORD_ONLY),
   }
 }

@@ -381,6 +381,10 @@ const DOH_OUTCOMES = {
   resolved: { status: "passed", text: "resolved" },
   sinkholed: { status: "finding", text: "sinkholed" },
   unresolved: { status: "expected", text: "no answer" },
+  // Answered with an HTTP error rather than with DNS — the resolver failing, not the name. Amber
+  // rather than grey: unlike "unavailable" it means the resolver was reachable and still gave a
+  // caller something that isn't an UnknownHostException.
+  errored: { status: "finding", text: "resolver error" },
   unavailable: { status: "skipped", text: "unavailable" },
 };
 

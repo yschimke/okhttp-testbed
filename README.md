@@ -332,6 +332,21 @@ is much quieter than a resolution error, so it is recorded as `sinkholed` rather
 A resolver the preflight found unreachable is `unavailable` and is never mistaken for one that
 said no.
 
+Three more suites hang off the same machinery. `HttpsRecordTest` asks what an `HTTPS` record's
+parameters *mean* rather than whether they arrived — most usefully that RFC 9460 §7.1.1 implies
+the default ALPN, so a record saying `alpn=h3,h2` means three protocols and not two, and that an
+absent `port` means 443 rather than 0. `DnsFailureTest` asks what a resolution failure looks like
+to a caller: SERVFAIL and NXDOMAIN have to be told apart, and a resolver answering `429` has to
+*not* arrive as `UnknownHostException`, or code catching that to mean "bad name" silently
+mishandles a rate limit. `HappyEyeballsTest` puts an unreachable address first and requires the
+connection to happen anyway.
+
+Two of those found something worth keeping. Some resolvers turn a DNSSEC validation failure into
+an HTTP `502`, which reaches a caller as a plain `IOException` — so the matrix grew an `errored`
+outcome to hold it, distinct from both "no answer" and "unreachable". And every client in the
+Happy Eyeballs suite sets `Proxy.NO_PROXY`, because with a proxy in the way OkHttp connects to the
+proxy and the pinned addresses are never dialled: the suite would pass having tested nothing.
+
 `DohServiceMetadataTest` asks the other half: what an `HTTPS` record carries, through `newCall`
 and `Dns.Record.ServiceMetadata`, since an ECH config list has nowhere else to come from. That
 API arrived in 5.5.0, so the suite is left out of the source set below it — the same version gate

@@ -67,6 +67,15 @@ enum class Endpoint(
     probe = Probe.Doh(url = "https://1.1.1.1/dns-query", name = "cloudflare-ech.com"),
   ),
 
+  // Publishes an HTTPS record with alpn and both address hints, and is a production name rather
+  // than a research one — so it is the stable place to ask what OkHttp makes of RFC 9460's
+  // parameters, without depending on an endpoint that exists to be experimented on.
+  CLOUDFLARE_WWW(
+    server = "cloudflare.com",
+    operator = "Cloudflare",
+    probe = Probe.Https("https://cloudflare.com/robots.txt"),
+  ),
+
   CLOUDFLARE_ECH(
     server = "cloudflare-ech.com",
     operator = "Cloudflare",
@@ -111,6 +120,14 @@ enum class Endpoint(
 
   // Answers with the suites, groups and signature algorithms it was offered. It asks to be used
   // only for clients you control, which one request per scheduled run is.
+  // Publishes a name per address family — v4 only, v6 only, and both — which is what makes
+  // testing address racing possible without inventing the addresses.
+  TEST_IPV6(
+    server = "test-ipv6.com",
+    operator = "Jason Fesler",
+    probe = Probe.Https("https://ds.test-ipv6.com/"),
+  ),
+
   HOWSMYSSL(
     server = "www.howsmyssl.com",
     operator = "Jeff Hodges",

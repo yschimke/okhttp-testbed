@@ -19,10 +19,6 @@ import assertk.assertThat
 import assertk.assertions.isEmpty
 import assertk.assertions.isNotEmpty
 import assertk.assertions.isNotNull
-import java.io.IOException
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicReference
 import okhttp3.Dns
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.params.ParameterizedTest
@@ -116,43 +112,6 @@ class DohServiceMetadataTest {
       records.filterIsInstance<Dns.Record.IpAddress>(),
       name = "${resolver.id} addresses with includeServiceMetadata off",
     ).isNotEmpty()
-  }
-
-  /**
-   * `newCall` is asynchronous and may report in more than one batch, so the records are collected
-   * until it says it is done. A timeout fails rather than hanging: a resolver that never called
-   * back would otherwise stall the run rather than report.
-   */
-  private fun Dns.records(hostname: String): List<Dns.Record> {
-    val latch = CountDownLatch(1)
-    val collected = mutableListOf<Dns.Record>()
-    val failure = AtomicReference<IOException>()
-
-    newCall(Dns.Request(hostname)).enqueue(
-      object : Dns.Callback {
-        override fun onRecords(
-          call: Dns.Call,
-          done: Boolean,
-          records: List<Dns.Record>,
-        ) {
-          synchronized(collected) { collected += records }
-          if (done) latch.countDown()
-        }
-
-        override fun onFailure(
-          call: Dns.Call,
-          e: IOException,
-        ) {
-          failure.set(e)
-          latch.countDown()
-        }
-      },
-    )
-
-    check(latch.await(30, TimeUnit.SECONDS)) { "$hostname: the resolver never called back" }
-    failure.get()?.let { throw it }
-
-    return synchronized(collected) { collected.toList() }
   }
 
   private fun DohResolver.availableWithMetadata(): Dns {
