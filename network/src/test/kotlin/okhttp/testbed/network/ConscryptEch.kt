@@ -17,10 +17,12 @@ package okhttp.testbed.network
 
 import java.io.IOException
 import java.net.Socket
+import java.security.KeyStore
 import java.util.concurrent.ConcurrentHashMap
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
+import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 import okhttp3.Dns
 import okio.ByteString
@@ -84,15 +86,29 @@ object ConscryptEch {
    *     Caused by: java.security.cert.CertificateException: Unknown authType: GENERIC
    *         at sun.security.validator.EndEntityChecker.checkTLSServer(EndEntityChecker.java:290)
    *
-   * Conscrypt reaches the JDK's trust manager through `Platform.checkServerTrusted`, which calls
-   * the two-argument method, so wrapping it in an [javax.net.ssl.X509ExtendedTrustManager] to
-   * reach the socket-aware overload does not avoid this — that was tried, and it also stopped
-   * Conscrypt finding [EchEnablingTrustManager.getNetworkSecurityPolicy], which turned ECH off.
-   * Using the trust manager that belongs to the same stack is the fix that leaves both alone.
+   * `org.conscrypt.TrustManagerImpl` does its own validation and never reaches that checker, so
+   * the name is not a problem it has. Two nearby things do not work, both tried and both reported
+   * by a run:
    *
-   * The trust anchors are the same either way: this reads the JVM's default trust store.
+   *  * Wrapping the JDK's in an [javax.net.ssl.X509ExtendedTrustManager] to reach the
+   *    socket-aware overload. Conscrypt calls the two-argument method through
+   *    `Platform.checkServerTrusted` regardless, so the failure was unchanged — and being
+   *    extended stopped Conscrypt finding [EchEnablingTrustManager.getNetworkSecurityPolicy],
+   *    which turned ECH off entirely.
+   *  * `Conscrypt.getDefaultX509TrustManager()`, which on OpenJDK returns
+   *    `sun.security.ssl.X509TrustManagerImpl` — the JDK's, not Conscrypt's. The factory below is
+   *    what actually produces Conscrypt's.
+   *
+   * The trust anchors are the same either way: passing a null [java.security.KeyStore] reads the
+   * JVM's default trust store.
    */
-  fun platformTrustManager(): X509TrustManager = Conscrypt.getDefaultX509TrustManager()
+  fun platformTrustManager(): X509TrustManager =
+    TrustManagerFactory
+      .getInstance("PKIX", Conscrypt.newProvider())
+      .apply { init(null as KeyStore?) }
+      .trustManagers
+      .filterIsInstance<X509TrustManager>()
+      .first()
 }
 
 /**
