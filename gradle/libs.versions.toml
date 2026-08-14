@@ -8,6 +8,13 @@ kotlin = "2.2.21"
 # Must match the mockserver/mockserver image tag; the client refuses to talk to a
 # server whose major.minor differs. Injected into the tests as mockserver.version.
 mockserver = "7.4.0"
+# The go-httpbin container tag, for the `containers` suite and for test-server's compose
+# stack alike. Injected into the tests as gohttpbin.version, and checked against the compose
+# file by checkImagePins, so the deployment and the suite cannot drift apart.
+#
+# Note the tag has no `v`: releases up to 2.21 were published both ways, later ones only
+# without, so `v2.25.0` does not exist even though `v2.16.1` does.
+gohttpbin = "2.25.0"
 okhttp = "5.4.0"
 # The ECH suite needs DnsOverHttps.Builder.includeServiceMetadata, which no release has
 # yet: 5.4.0 resolves A and AAAA records only, so there is no HTTPS record to carry an

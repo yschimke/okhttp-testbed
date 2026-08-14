@@ -26,7 +26,8 @@ services:
   # dependencies outside the standard library. Replaces httpbin.org and httpbingo.org, which
   # are rate-limited and intermittently down.
   httpbin:
-    image: ghcr.io/mccutchen/go-httpbin:v2.16.1
+    # Tag must match `gohttpbin` in gradle/libs.versions.toml; checkImagePins enforces it.
+    image: ghcr.io/mccutchen/go-httpbin:2.25.0
     restart: unless-stopped
     ports:
       - "${HTTPBIN_PORT:-8090}:8080"

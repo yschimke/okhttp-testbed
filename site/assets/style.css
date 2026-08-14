@@ -295,6 +295,36 @@ details.finding-detail pre {
   line-height: 1.5;
 }
 
+/* ---- open work ---- */
+
+.issue-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: 0.5rem 2rem;
+}
+
+.issue-group h3 {
+  margin: 1rem 0 0.35rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.3rem;
+}
+
+.issue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-width: none;
+}
+
+.issue-list li {
+  padding: 0.28rem 0;
+  font-size: 0.92rem;
+}
+
 /* ---- supporting prose ----
  *
  * Collapsed by default and sitting under the results, because this page is something you come

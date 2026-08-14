@@ -14,7 +14,7 @@ Suites
 
 | Suite         | What it needs               | What it covers                                                      |
 |---------------|-----------------------------|---------------------------------------------------------------------|
-| `containers`  | Docker                      | SOCKS5 and HTTP proxies, TLS via MockServer, virtual threads (Loom)  |
+| `containers`  | Docker                      | SOCKS5 and HTTP proxies, TLS via MockServer, HTTP semantics via go-httpbin, virtual threads (Loom) |
 | `network`     | Outbound network            | ALPN and SNI overrides, Let's Encrypt trust, ECH on the public servers |
 | `android-ech` | Docker, an API 37 emulator  | Encrypted Client Hello over DoH: accepted, retried, and declined     |
 
@@ -50,6 +50,15 @@ client is acceptable to anything else. It ships alongside pinned `go-httpbin` an
 containers, which is issue #8. See [`test-server/README.md`](test-server/README.md) — it
 also covers what a deployment on a non-standard port does and does not change.
 
+The same `go-httpbin` image is also driven directly by the `containers` suite, through
+Testcontainers rather than through compose: the compose stack is for a deployment somebody
+reaches over the network, and the suite needs a container it starts and throws away per run.
+Both read their tag from one place — see "One pin per image" below. Either way the point is
+that the HTTP semantics coverage runs against something pinned and deterministic rather than
+against httpbin.org, which rate-limits, leaving the public endpoint as a *comparison* rather
+than a dependency: the same assertion against both, where the two disagreeing is the
+interesting result.
+
 The rest of the Android device matrix is still to come. One of OkHttp's `Remote` tests is
 waiting on it and could not move: `AndroidNetworksTest`, which pins a call to a
 `ConnectivityManager` network — that tests an Android platform API, not something a JVM can
@@ -73,6 +82,28 @@ Two things enforce that, rather than leaving it to good intentions:
   `check`, before every `test` task, and before the Android suite's `connected…AndroidTest`
   task, which `check` doesn't cover. Extend `forbiddenImports` in the root
   `build.gradle.kts` as new dependencies arrive.
+
+One pin per image
+-----------------
+
+`go-httpbin` is run by two things that can't read each other's configuration: the `containers`
+suite, through Testcontainers, and `test-server`'s compose stack, for a deployment. Two pins of
+one image are two pins that drift, so the tag lives in `gradle/libs.versions.toml` as
+`gohttpbin`, the build injects it into the tests as `gohttpbin.version`, and `checkImagePins`
+fails if the compose file disagrees:
+
+```
+ghcr.io/mccutchen/go-httpbin is 2.16.1 in docker-compose.yml, but 2.25.0 in libs.versions.toml
+```
+
+It runs before every `test` task, next to `checkPublicApiOnly`, and for the same reason: a
+convention nobody enforces is a convention right up until the first time it matters. Add an
+image to `pinnedImages` in the root `build.gradle.kts` when a third one needs pinning in both
+places.
+
+One wrinkle worth recording, since it will catch somebody: **the go-httpbin image tag has no
+`v`, but it used to.** Releases through 2.21 were published both ways, later ones only without
+— so `v2.16.1` and `2.16.1` both resolve, while `v2.25.0` does not exist at all.
 
 Where a test needs something the public API doesn't offer, prefer solving it with the
 container instead of reaching into OkHttp — for example `BasicMockServerTest.trustMockServer()`
@@ -296,6 +327,15 @@ published; it is about the pull request, not about the state of the repository.
 The page leads with the results — the current status, then what failed, then the suites,
 then endpoint availability, then history. The explanation of what any of it means sits under
 those, collapsed: this is a page you return to for the state of things, not to read.
+
+It also lists the open issues, grouped by area. That comes from the GitHub API on every build
+rather than from an artifact, so it is current even on a build that collected no test results,
+and the grouping comes from each issue's `area:` label — `area:http`, `area:tls`, `area:dns`,
+`area:ech`, `area:infrastructure` — rather than from a table in the site. **Label a new issue
+and it appears under the right heading with nothing else to change.** An issue with no `area:`
+label still shows, under "Unfiled", because dropping it would make the section quietly wrong
+rather than visibly incomplete; the `tracking` label marks the roadmap issue itself, which is
+rendered as a link above the groups rather than as an item in them.
 
 Suite names on it link to the test that produced them. The link is derived from the workflow
 and the class name rather than recorded, so a new suite is linked the day it lands; the cost

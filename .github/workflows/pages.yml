@@ -22,6 +22,8 @@ permissions:
   id-token: write
   # Reading the test workflows' artifacts.
   actions: read
+  # Reading the open issues the roadmap section lists.
+  issues: read
 
 # Never two deploys at once, and never cancel one half-done: the deployed site carries the
 # history, so a cancelled deploy would lose whatever it was about to publish.
@@ -135,6 +137,23 @@ jobs:
               -o "site/data/$file" \
             || echo "no published $file to carry forward"
           done
+
+      # The roadmap section. Unconditional, unlike the results steps: it comes from the API
+      # rather than from an artifact, so it is current on every build and survives a run that
+      # collected no test results at all. A failure here is not worth losing a deploy over —
+      # the page renders the section empty if the file is missing.
+      - name: Collect Open Issues
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir -p site/data
+          gh issue list --state open --limit 100 \
+            --json number,title,url,labels,updatedAt \
+            > site/data/issues.json
+          echo "collected $(python3 -c 'import json,sys; print(len(json.load(open("site/data/issues.json"))))') open issue(s)"
 
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v4

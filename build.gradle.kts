@@ -24,6 +24,58 @@ val forbiddenImports =
     "okio.internal",
   )
 
+// An image the suites and the deployable compose stack both run has to be pinned in two
+// files that can't read each other — Gradle's version catalogue and a compose YAML. Rather
+// than trust them to stay in step, check it: the catalogue is the source, and this fails if
+// the compose file has drifted. Same reasoning as checkPublicApiOnly — a convention nobody
+// enforces is a convention until the first time it matters.
+val pinnedImages =
+  mapOf(
+    "ghcr.io/mccutchen/go-httpbin" to libs.versions.gohttpbin.get(),
+  )
+
+val composeFile = layout.projectDirectory.file("test-server/docker-compose.yml")
+
+val checkImagePins =
+  tasks.register("checkImagePins") {
+    group = "verification"
+    description = "Fails if a pinned image tag in docker-compose.yml has drifted from the version catalogue."
+
+    inputs.file(composeFile).withPropertyName("compose").withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.property("pinnedImages", pinnedImages)
+    outputs.upToDateWhen { true }
+
+    doLast {
+      val lines = composeFile.asFile.readLines()
+
+      val offences =
+        pinnedImages.flatMap { (image, expected) ->
+          val found =
+            lines
+              .map(String::trim)
+              .filter { it.startsWith("image:") && it.contains("$image:") }
+              .map { it.substringAfterLast("$image:") }
+
+          when {
+            found.isEmpty() -> listOf("$image is not pinned in ${composeFile.asFile.name} at all")
+            else ->
+              found
+                .filter { it != expected }
+                .map { "$image is $it in ${composeFile.asFile.name}, but $expected in libs.versions.toml" }
+          }
+        }
+
+      if (offences.isNotEmpty()) {
+        throw GradleException(
+          offences.joinToString(
+            prefix = "Image pins have drifted. Update the compose file, or the catalogue:\n  ",
+            separator = "\n  ",
+          ),
+        )
+      }
+    }
+  }
+
 subprojects {
   // Suites bring their own Kotlin plugin: `android-ech` is an Android module and can't
   // share one with the JVM suites. Everything below is common to all of them, so it
@@ -82,6 +134,10 @@ subprojects {
 
   tasks.withType<Test>().configureEach {
     dependsOn(checkPublicApiOnly)
+
+    // Cheap, and it runs where it matters: a suite about to start a pinned image is exactly
+    // when a drifted pin is worth hearing about.
+    dependsOn(checkImagePins)
 
     useJUnitPlatform()
 
