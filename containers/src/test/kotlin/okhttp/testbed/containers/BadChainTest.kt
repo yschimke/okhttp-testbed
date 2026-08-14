@@ -19,7 +19,6 @@ import assertk.assertThat
 import assertk.assertions.isEqualTo
 import assertk.assertions.isInstanceOf
 import assertk.assertions.isNotNull
-import java.io.File
 import java.io.IOException
 import javax.net.ssl.SSLException
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -33,8 +32,6 @@ import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import org.testcontainers.containers.GenericContainer
-import org.testcontainers.containers.wait.strategy.Wait
-import org.testcontainers.images.builder.ImageFromDockerfile
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 
@@ -88,13 +85,21 @@ class BadChainTest {
 
   @Test
   fun goodChainIsAccepted() {
-    client.newCall(Request.Builder().url(tlsUrl(GOOD_PORT, "/health")).build()).execute().use { response ->
+    client.newCall(Request.Builder().url(tlsUrl(TestServer.TLS_PORT, "/health")).build()).execute().use { response ->
       assertThat(response.code).isEqualTo(200)
     }
   }
 
   @ParameterizedTest
-  @ValueSource(ints = [EXPIRED, WRONG_HOST, SELF_SIGNED, UNTRUSTED_ROOT, INCOMPLETE_CHAIN])
+  @ValueSource(
+    ints = [
+      TestServer.EXPIRED_PORT,
+      TestServer.WRONG_HOST_PORT,
+      TestServer.SELF_SIGNED_PORT,
+      TestServer.UNTRUSTED_ROOT_PORT,
+      TestServer.INCOMPLETE_CHAIN_PORT,
+    ],
+  )
   fun badChainIsRefused(port: Int) {
     val failure =
       try {
@@ -114,7 +119,7 @@ class BadChainTest {
       .isInstanceOf(SSLException::class)
   }
 
-  private fun plainUrl(path: String) = "http://${server.host}:${server.getMappedPort(PLAIN_PORT)}$path".toHttpUrl()
+  private fun plainUrl(path: String) = "http://${server.host}:${server.getMappedPort(TestServer.PLAIN_PORT)}$path".toHttpUrl()
 
   private fun tlsUrl(
     port: Int,
@@ -122,29 +127,14 @@ class BadChainTest {
   ) = "https://${server.host}:${server.getMappedPort(port)}$path".toHttpUrl()
 
   companion object {
-    private const val PLAIN_PORT = 8080
-    private const val GOOD_PORT = 8443
-    private const val EXPIRED = 8420
-    private const val WRONG_HOST = 8421
-    private const val SELF_SIGNED = 8422
-    private const val UNTRUSTED_ROOT = 8423
-    private const val INCOMPLETE_CHAIN = 8424
-
     private val CHAIN_NAMES =
       mapOf(
-        EXPIRED to "expired",
-        WRONG_HOST to "wrong-host",
-        SELF_SIGNED to "self-signed",
-        UNTRUSTED_ROOT to "untrusted-root",
-        INCOMPLETE_CHAIN to "incomplete-chain",
+        TestServer.EXPIRED_PORT to "expired",
+        TestServer.WRONG_HOST_PORT to "wrong-host",
+        TestServer.SELF_SIGNED_PORT to "self-signed",
+        TestServer.UNTRUSTED_ROOT_PORT to "untrusted-root",
+        TestServer.INCOMPLETE_CHAIN_PORT to "incomplete-chain",
       )
-
-    // The directory is supplied by the build rather than reached for with a relative path, so
-    // this doesn't depend on the working directory a test happens to run in.
-    private val TEST_SERVER_DIR: String =
-      checkNotNull(System.getProperty("testbed.testServerDir")) {
-        "testbed.testServerDir is not set — run these tests through Gradle, which supplies it"
-      }
 
     /**
      * One container for the whole class, which departs from the instance-per-test containers
@@ -157,10 +147,6 @@ class BadChainTest {
      */
     @Container
     @JvmStatic
-    val server: GenericContainer<*> =
-      GenericContainer(
-        ImageFromDockerfile().withFileFromPath(".", File(TEST_SERVER_DIR).toPath()),
-      ).withExposedPorts(PLAIN_PORT, GOOD_PORT, EXPIRED, WRONG_HOST, SELF_SIGNED, UNTRUSTED_ROOT, INCOMPLETE_CHAIN)
-        .waitingFor(Wait.forHttp("/health").forPort(PLAIN_PORT))
+    val server: GenericContainer<*> = TestServer.container()
   }
 }

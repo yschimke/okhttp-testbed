@@ -46,8 +46,14 @@ tasks.withType<Test>().configureEach {
 // mismatch.
 val loomTestPattern = "**/BasicLoomTest.class"
 
+// HostileRetryTest asks how many times OkHttp sends a request the server killed under it. The
+// answer is a fact about OkHttp's retry policy, not a defect here, so it records rather than
+// gates — the same category as loomTest. HostileResponseTest, which asserts only that a
+// malformed response fails at all, stays fatal.
+val hostileTestPattern = "**/HostileRetryTest.class"
+
 tasks.test {
-  exclude(loomTestPattern)
+  exclude(loomTestPattern, hostileTestPattern)
 }
 
 val loomTest = tasks.register<Test>("loomTest") {
@@ -62,8 +68,21 @@ val loomTest = tasks.register<Test>("loomTest") {
   ignoreFailures = true
 }
 
+val hostileTest =
+  tasks.register<Test>("hostileTest") {
+    group = "verification"
+    description = "Reports whether OkHttp retries a request the server killed. Records failures without failing the build."
+
+    val testSourceSet = sourceSets.test.get()
+    testClassesDirs = testSourceSet.output.classesDirs
+    classpath = testSourceSet.runtimeClasspath
+    include(hostileTestPattern)
+
+    ignoreFailures = true
+  }
+
 tasks.check {
-  dependsOn(loomTest)
+  dependsOn(loomTest, hostileTest)
 }
 
 dependencies {
