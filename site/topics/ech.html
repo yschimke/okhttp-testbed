@@ -120,6 +120,31 @@
     gates, for the reason everything calling those servers does.
   </p>
 
+  <h2>The GREASE case</h2>
+  <p>
+    The failure most likely to reach a real user is not ECH breaking. A client that supports ECH
+    sends the <code>encrypted_client_hello</code> extension even with <em>no</em> configuration for
+    the name, so that a handshake using ECH and one not using it look alike on the wire — and a
+    middlebox that objects to the extension then breaks handshakes from clients that were never
+    trying to use ECH at all.
+  </p>
+  <p>
+    <code>EchGreaseTest</code> asks the unglamorous half: an ordinary client, nothing configured,
+    fetching from each public server that speaks ECH. It runs on every platform rather than only
+    where ECH works — the JVM cannot do ECH today, and that must not stop it reaching servers that
+    can. Each case also requires the server to say ECH was <em>not</em> used
+    (<code>sni=plaintext</code>, <code>SSL_ECH_STATUS: not attempted</code>, "You are not using
+    ECH"), so a run where ECH quietly started working fails rather than passing while measuring
+    something else.
+  </p>
+  <p>
+    The local half is the offer itself: <code>test-server</code>'s <code>/tls</code> reports the
+    ClientHello's extension IDs in order, names GREASE values rather than leaving them as hex, and
+    calls out <code>0xfe0d</code> on its own. Whether OkHttp offered it is recorded and never
+    asserted — today's JVM offers nothing, and pinning that would turn the feature arriving into a
+    failed test.
+  </p>
+
   <h2>What it would take on the JVM</h2>
   <p>
     <code>network:echTest</code> runs the same cases against the public servers on a JVM, and its

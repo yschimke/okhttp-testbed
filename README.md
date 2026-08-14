@@ -261,6 +261,31 @@ It calls the service once per scheduled run. The `network` workflow does not run
 requests, which is what makes that true rather than aspirational: How's My SSL asks to be used
 only for clients you control, and a daily request is that.
 
+What GREASE costs, and the extensions that carry it
+---------------------------------------------------
+
+A client that supports ECH is meant to send the `encrypted_client_hello` extension even when it
+has **no** configuration for the name, so that a handshake using ECH and one not using it look
+alike on the wire. The failure that reaches users is not ECH breaking: it is a middlebox
+objecting to the extension and breaking a handshake from a client that was never trying to use
+ECH in the first place.
+
+`EchGreaseTest` asks the unglamorous half of that. An ordinary `OkHttpClient` — no ECH
+configuration, no DoH, nothing arranged — fetches from each public server that speaks ECH, and
+each has to serve it. It runs on every platform rather than only where ECH works, which is the
+point: the JVM cannot do ECH today and that must not stop it talking to servers that can. Each
+case also requires the server to *say* ECH was not used — Cloudflare's `sni=plaintext`, DEfO's
+`SSL_ECH_STATUS: not attempted`, `tls-ech.dev`'s "You are not using ECH" — because a success
+where ECH had quietly started working would pass while testing something else entirely.
+
+The local half is the offer itself. `test-server`'s `/tls` now reports the ClientHello's
+extension IDs in order, which is most of what a JA3 or JA4 fingerprint is built from, with
+GREASE values (RFC 8701) named rather than left as mystery hex, and `0xfe0d` called out on its
+own. `ClientHelloExtensionsTest` asserts the fixture's own consistency — the list is recorded,
+it carries the two extensions no TLS 1.3 handshake can omit, and the ECH flag agrees with the
+list it came from — and records what OkHttp offered without asserting it. Today's JVM offers no
+ECH extension at all; pinning that would turn the feature arriving into a failure.
+
 The resolver matrix
 -------------------
 
