@@ -3,7 +3,7 @@ agp = "9.1.1"
 android-junit5 = "2.0.1"
 androidx-test-runner = "1.7.0"
 assertk = "0.28.1"
-junit-platform = "1.14.4"
+junit-platform = "6.1.2"
 kotlin = "2.2.21"
 # Must match the mockserver/mockserver image tag; the client refuses to talk to a
 # server whose major.minor differs. Injected into the tests as mockserver.version.
@@ -20,7 +20,7 @@ okhttp = "5.4.0"
 # yet: 5.4.0 resolves A and AAAA records only, so there is no HTTPS record to carry an
 # ECH config list. Drop this back to `okhttp` once a release ships it.
 ech-okhttp = "5.5.0-SNAPSHOT"
-org-junit-jupiter = "5.13.4"
+org-junit-jupiter = "6.1.2"
 testcontainers = "1.21.4"
 
 [libraries]
