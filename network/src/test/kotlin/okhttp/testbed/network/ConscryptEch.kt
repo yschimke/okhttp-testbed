@@ -17,15 +17,10 @@ package okhttp.testbed.network
 
 import java.io.IOException
 import java.net.Socket
-import java.security.KeyStore
-import java.security.cert.X509Certificate
 import java.util.concurrent.ConcurrentHashMap
 import javax.net.ssl.SSLContext
-import javax.net.ssl.SSLEngine
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
-import javax.net.ssl.TrustManagerFactory
-import javax.net.ssl.X509ExtendedTrustManager
 import javax.net.ssl.X509TrustManager
 import okhttp3.Dns
 import okio.ByteString
@@ -78,14 +73,26 @@ object ConscryptEch {
       init(null, arrayOf(trustManager), null)
     }
 
-  /** The JVM's default trust manager. */
-  fun platformTrustManager(): X509TrustManager =
-    TrustManagerFactory
-      .getInstance(TrustManagerFactory.getDefaultAlgorithm())
-      .apply { init(null as KeyStore?) }
-      .trustManagers
-      .filterIsInstance<X509TrustManager>()
-      .first()
+  /**
+   * Conscrypt's trust manager, trusting whatever the JVM trusts.
+   *
+   * Conscrypt's, rather than the JDK's, because Conscrypt names the authentication type `GENERIC`
+   * for TLS 1.3 and the JDK's validator has a fixed list that the name isn't on. Every case in
+   * [EchConscryptTest] failed on that, before a client hello was sent:
+   *
+   *     javax.net.ssl.SSLHandshakeException: Unknown authType: GENERIC
+   *     Caused by: java.security.cert.CertificateException: Unknown authType: GENERIC
+   *         at sun.security.validator.EndEntityChecker.checkTLSServer(EndEntityChecker.java:290)
+   *
+   * Conscrypt reaches the JDK's trust manager through `Platform.checkServerTrusted`, which calls
+   * the two-argument method, so wrapping it in an [javax.net.ssl.X509ExtendedTrustManager] to
+   * reach the socket-aware overload does not avoid this — that was tried, and it also stopped
+   * Conscrypt finding [EchEnablingTrustManager.getNetworkSecurityPolicy], which turned ECH off.
+   * Using the trust manager that belongs to the same stack is the fix that leaves both alone.
+   *
+   * The trust anchors are the same either way: this reads the JVM's default trust store.
+   */
+  fun platformTrustManager(): X509TrustManager = Conscrypt.getDefaultX509TrustManager()
 }
 
 /**
@@ -99,70 +106,12 @@ object ConscryptEch {
  * work on the JVM today, and it is not something a caller can fix by configuring OkHttp.
  *
  * The method is found reflectively, which is why it has to be public on a public class.
- *
- * It extends [X509ExtendedTrustManager] rather than implementing [X509TrustManager], because the
- * platform's trust manager is an extended one and delegating only the plain interface throws that
- * away. Conscrypt then has nothing to call but the two-argument method, which hands the authType
- * straight to `sun.security.validator`, and the authType Conscrypt uses for TLS 1.3 is one that
- * validator doesn't take:
- *
- *     javax.net.ssl.SSLHandshakeException: Unknown authType: GENERIC
- *     Caused by: java.security.cert.CertificateException: Unknown authType: GENERIC
- *         at sun.security.validator.EndEntityChecker.checkTLSServer(EndEntityChecker.java:290)
- *
- * Every case in [EchConscryptTest] died there, before any client hello was sent. Keeping the
- * socket- and engine-aware overloads keeps the checks that go with them — hostname verification
- * and algorithm constraints — which the plain interface also silently drops.
  */
 class EchEnablingTrustManager(
   private val delegate: X509TrustManager,
-) : X509ExtendedTrustManager() {
-  private val extended = delegate as? X509ExtendedTrustManager
-
+) : X509TrustManager by delegate {
   @Suppress("unused") // Called by Conscrypt, reflectively.
   fun getNetworkSecurityPolicy(): NetworkSecurityPolicy = Policy
-
-  override fun getAcceptedIssuers(): Array<X509Certificate> = delegate.acceptedIssuers
-
-  override fun checkClientTrusted(
-    chain: Array<out X509Certificate>,
-    authType: String,
-  ) = delegate.checkClientTrusted(chain, authType)
-
-  override fun checkServerTrusted(
-    chain: Array<out X509Certificate>,
-    authType: String,
-  ) = delegate.checkServerTrusted(chain, authType)
-
-  // A delegate that isn't extended can only be asked the plain question. That is the fallback
-  // rather than the path: the trust managers this is built with are extended.
-  override fun checkClientTrusted(
-    chain: Array<out X509Certificate>,
-    authType: String,
-    socket: Socket?,
-  ) = extended?.checkClientTrusted(chain, authType, socket)
-    ?: delegate.checkClientTrusted(chain, authType)
-
-  override fun checkServerTrusted(
-    chain: Array<out X509Certificate>,
-    authType: String,
-    socket: Socket?,
-  ) = extended?.checkServerTrusted(chain, authType, socket)
-    ?: delegate.checkServerTrusted(chain, authType)
-
-  override fun checkClientTrusted(
-    chain: Array<out X509Certificate>,
-    authType: String,
-    engine: SSLEngine?,
-  ) = extended?.checkClientTrusted(chain, authType, engine)
-    ?: delegate.checkClientTrusted(chain, authType)
-
-  override fun checkServerTrusted(
-    chain: Array<out X509Certificate>,
-    authType: String,
-    engine: SSLEngine?,
-  ) = extended?.checkServerTrusted(chain, authType, engine)
-    ?: delegate.checkServerTrusted(chain, authType)
 
   private object Policy : NetworkSecurityPolicy {
     override fun isCertificateTransparencyVerificationRequired(hostname: String): Boolean = false
