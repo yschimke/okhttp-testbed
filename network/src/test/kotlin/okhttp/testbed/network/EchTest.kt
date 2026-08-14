@@ -182,7 +182,7 @@ class EchTest {
  * Collect Route information to confirm we sent an ECH config list to our TLS stack. Whether we
  * actually encrypted the client hello depends on our TLS stack.
  */
-private object RouteTagger : Interceptor {
+internal object RouteTagger : Interceptor {
   override fun intercept(chain: Interceptor.Chain): Response {
     val routeList = chain.call().routeList
     routeList.routes += chain.connection()!!.route()
@@ -190,12 +190,12 @@ private object RouteTagger : Interceptor {
   }
 }
 
-private val Call.routeList: RouteList
+internal val Call.routeList: RouteList
   get() = tag(RouteList::class) { RouteList() }
 
 /**
  * All of the routes used to retrieve an HTTP response.
  */
-private class RouteList {
+internal class RouteList {
   val routes = mutableListOf<Route>()
 }

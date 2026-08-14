@@ -41,6 +41,7 @@ fun compareVersions(
 val echTestPattern = "EchTest"
 val echConscryptTestPattern = "EchConscryptTest"
 val echClientHelloTestPattern = "EchClientHelloTest"
+val echPlatformTestPattern = "EchPlatformTest"
 
 // The Conscrypt built from `google3-export`, if someone has fetched or built it. It is not on
 // any repository — `Conscrypt.setEchConfigList` exists on that branch and in no release — so
@@ -63,7 +64,9 @@ sourceSets {
         exclude(
           "**/$echConscryptTestPattern.kt",
           "**/$echClientHelloTestPattern.kt",
+          "**/$echPlatformTestPattern.kt",
           "**/ConscryptEch.kt",
+          "**/EchConscryptPlatform.kt",
         )
       }
     }
@@ -113,6 +116,7 @@ val networkTest =
       "**/$echTestPattern.class",
       "**/$echConscryptTestPattern.class",
       "**/$echClientHelloTestPattern.class",
+      "**/$echPlatformTestPattern.class",
     )
 
     reportEndpointsTo("networkTest")
@@ -170,6 +174,31 @@ val echConscryptTest =
     }
   }
 
+// The third reading of the same servers, and the one that answers the question the other two
+// only bracket. echTest says OkHttp as shipped doesn't encrypt a client hello on the JVM;
+// echConscryptTest says Conscrypt can, from outside OkHttp. Neither says what happens when the
+// config list OkHttp resolved reaches Conscrypt through OkHttp's own platform, because no
+// platform does that yet. EchConscryptPlatform is one that does, so this task is the difference
+// between echTest and a fixed OkHttp, measured rather than argued.
+val echPlatformTest =
+  tasks.register<Test>("echPlatformTest") {
+    group = "verification"
+    description = "Reports whether OkHttp does ECH when its platform makes the Conscrypt call."
+
+    val testSourceSet = sourceSets.test.get()
+    testClassesDirs = testSourceSet.output.classesDirs
+    classpath = testSourceSet.runtimeClasspath
+    include("**/$echPlatformTestPattern.class")
+
+    reportEndpointsTo("echPlatformTest")
+    enabled = supportsEch && hasConscrypt
+    ignoreFailures = true
+
+    doFirst {
+      logger.lifecycle("Testing ECH against OkHttp $okhttpVersion on Conscrypt, through OkHttp's platform")
+    }
+  }
+
 if (!supportsEch) {
   logger.lifecycle("Skipping EchTest: OkHttp $okhttpVersion predates the ECH API")
 }
@@ -179,7 +208,7 @@ if (!hasConscrypt) {
 }
 
 tasks.check {
-  dependsOn(networkTest, echTest, echConscryptTest)
+  dependsOn(networkTest, echTest, echConscryptTest, echPlatformTest)
 }
 
 dependencies {
