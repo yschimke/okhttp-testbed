@@ -45,7 +45,14 @@ import sys
 import xml.etree.ElementTree as ElementTree
 
 # Gradle test tasks whose failures are findings about OkHttp rather than breakage here.
-REPORTING_TASKS = {"loomTest", "hostileTest", "echTest", "echConscryptTest", "networkTest"}
+REPORTING_TASKS = {
+    "loomTest",
+    "hostileTest",
+    "echTest",
+    "echConscryptTest",
+    "echPlatformTest",
+    "networkTest",
+}
 
 # The same distinction for suites that can't make it with a task name. Android instrumentation
 # runs under one task whatever it is testing, so the Android suite that calls tls-ech.dev and
@@ -58,7 +65,7 @@ REPORTING_CLASSES = {"PublicEncryptedClientHelloTest"}
 HISTORY_LIMIT = 120
 
 
-def parse_suite(path: pathlib.Path, task: str, workflow: str, run_url: str) -> dict:
+def parse_suite(path: pathlib.Path, task: str, workflow: str, run_url: str, platform: str) -> dict:
     """Read one JUnit XML file into a suite record."""
     root = ElementTree.parse(path).getroot()
     # Gradle writes a single <testsuite> per file, but a <testsuites> wrapper is legal.
@@ -104,6 +111,9 @@ def parse_suite(path: pathlib.Path, task: str, workflow: str, run_url: str) -> d
         "workflow": workflow,
         "runUrl": run_url,
         "task": task,
+        # Carried per suite rather than per version: a version card merges an Android artifact
+        # and a JVM one, and "which platform" is then a property of the suite, not of the card.
+        "platform": platform,
         "reporting": task in REPORTING_TASKS or simple_name in REPORTING_CLASSES,
         "timeSeconds": float(root.get("time") or 0.0),
         "passed": sum(1 for c in cases if c["status"] == "passed"),
@@ -193,6 +203,10 @@ def parse_artifact(directory: pathlib.Path) -> dict | None:
 
     workflow = metadata.get("workflow", "unknown")
     run_url = metadata.get("runUrl", "")
+    # Runs from before this was recorded fall back to the Java version they did carry.
+    platform = metadata.get("platform") or (
+        f"JDK {metadata['javaVersion']}" if metadata.get("javaVersion") else ""
+    )
 
     # The container workflow lays its XML out by Gradle task, which is the distinction the
     # page needs. The Android suite lays it out by device instead, so its task comes from
@@ -204,7 +218,7 @@ def parse_artifact(directory: pathlib.Path) -> dict | None:
     for xml in sorted(directory.rglob("*.xml")):
         task = xml.parent.name if task_from_path and xml.parent != directory else default_task
         try:
-            suites.append(parse_suite(xml, task, workflow, run_url))
+            suites.append(parse_suite(xml, task, workflow, run_url, platform))
         except ElementTree.ParseError as e:
             print(f"skipping unreadable {xml}: {e}", file=sys.stderr)
 
@@ -218,7 +232,7 @@ def parse_artifact(directory: pathlib.Path) -> dict | None:
         "workflow": workflow,
         "label": label,
         "okhttpVersion": metadata.get("okhttpVersion", label),
-        "javaVersion": metadata.get("javaVersion", ""),
+        "platform": platform,
         "jobStatus": metadata.get("jobStatus", ""),
         "runNumber": metadata.get("runNumber", 0),
         "runUrl": run_url,
@@ -239,13 +253,15 @@ def group_by_version(artifacts: list[dict]) -> list[dict]:
             {
                 "okhttpVersion": artifact["okhttpVersion"],
                 "label": artifact["label"],
-                "javaVersion": artifact["javaVersion"],
+                "platforms": [],
                 "workflows": [],
                 "suites": [],
             },
         )
         if artifact["workflow"] not in version["workflows"]:
             version["workflows"].append(artifact["workflow"])
+        if artifact["platform"] and artifact["platform"] not in version["platforms"]:
+            version["platforms"].append(artifact["platform"])
         version["suites"].extend(artifact["suites"])
 
     for version in versions.values():

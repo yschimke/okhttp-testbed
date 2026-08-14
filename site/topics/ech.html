@@ -37,6 +37,21 @@
     which is why it is here.
   </p>
 
+  <h2>Where ECH works today</h2>
+  <p>
+    One row per server, one column per way of reaching it. The suites make the same requests and
+    differ only in what does the TLS, so the columns are readable against each other: the gap
+    between <em>OkHttp as shipped</em> and <em>OkHttp + the missing call</em> is one call to
+    <code>Conscrypt.setEchConfigList</code>, and nothing else.
+  </p>
+  <div id="ech-matrix">Loading results…</div>
+  <p class="note">
+    A <span class="pill finding">no</span> here is a finding, not a broken build. Every case calls
+    a server someone else operates, so these suites record their results rather than gating — see
+    <a href="../">the status page</a> for the run they came from, and
+    <a href="test-servers.html">test servers</a> for who runs what.
+  </p>
+
   <h2>Why it lives here</h2>
   <p>
     A ClientHello is only meaningfully encrypted if every link holds: the resolver returns an
@@ -281,6 +296,8 @@
   </p>
 
 </main>
+
+<script src="../assets/ech-results.js"></script>
 
 <footer class="site-footer">
   <div class="wrap">

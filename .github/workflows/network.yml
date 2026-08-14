@@ -116,7 +116,7 @@ jobs:
         # failures that happen before a test runs, so one suite failing to compile or to
         # resolve doesn't rob the others of a result.
         run: >
-          ./gradlew network:networkTest network:echTest network:echConscryptTest --continue
+          ./gradlew network:networkTest network:echTest network:echConscryptTest network:echPlatformTest --continue
           ${{ matrix.okhttpVersion && format('-PokhttpVersion={0}', matrix.okhttpVersion) || '' }}
 
       # What the XML can't say: which OkHttp version 'pinned' actually resolved to, and
@@ -129,13 +129,20 @@ jobs:
           if [ -z "$version" ]; then
             version=$(sed -n 's/^okhttp = "\(.*\)"$/\1/p' gradle/libs.versions.toml)
           fi
+          # What this actually ran on. Measured rather than written down: a runner image bump
+          # or a toolchain change should show up on the status page as a different platform,
+          # not as the same string next to different results.
+          props=$(java -XshowSettings:properties -version 2>&1)
+          prop() { printf '%s\n' "$props" | sed -n "s/^ *$1 = //p" | head -1; }
+          platform="$(prop java.vendor) JDK $(prop java.version) · $(prop os.arch)"
+
           mkdir -p network/build/test-results
           cat > network/build/test-results/run-metadata.json <<JSON
           {
             "workflow": "network",
             "label": "${{ matrix.okhttpVersion || 'pinned' }}",
             "okhttpVersion": "$version",
-            "javaVersion": "21",
+            "platform": "$platform",
             "jobStatus": "${{ job.status }}",
             "runNumber": ${{ github.run_number }},
             "runUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",

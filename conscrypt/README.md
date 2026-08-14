@@ -25,6 +25,14 @@ The first is why this directory exists. The second is the small piece of work
 [lysine-dev/okhttp#9559][okhttp-pr] does, one call to `Conscrypt.setEchConfigList` alongside the
 ALPN and session-ticket configuration that method already does — `Android10Platform` is the model.
 
+`network:echPlatformTest` measures that second row rather than describing it. `EchConscryptPlatform`
+is a `Platform` that makes exactly that call and nothing else new; `EchPlatformTest` then runs
+`EchTest`'s requests through ordinary public API with it installed. The two suites are the same
+client against the same servers, so the difference between their results is the one call. That
+platform is the only file here allowed to import `okhttp3.internal` — it is a `Platform`, which
+OkHttp declares nowhere else — and it says so with a `USES-OKHTTP-INTERNALS:` marker that
+`checkPublicApiOnly` reports on every run.
+
 The third is a Conscrypt change rather than an OkHttp one, and it is why `network:echConscryptTest`
 has no counterpart to `EchTest.echIsRetriedOnStaleTlsEchDev`. On Android, a rejected ECH config
 arrives as an `EchConfigMismatchException` carrying the config the server offered instead, which

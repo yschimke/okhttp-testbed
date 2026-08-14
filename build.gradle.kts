@@ -102,8 +102,24 @@ subprojects {
       doLast {
         val offences =
           sources.files.sorted().flatMap { file ->
-            file
-              .readLines()
+            val lines = file.readLines()
+
+            // A file may opt out by saying why, on its own line:
+            //
+            //     // USES-OKHTTP-INTERNALS: reimplements ConscryptPlatform's missing ECH call.
+            //
+            // The rule is about suites: a test that reaches into `okhttp3.internal` is testing
+            // something no caller can rely on. A file whose subject *is* an internal — a platform
+            // OkHttp doesn't ship yet — can't be written any other way, and the alternative to
+            // this marker is deleting the rule for everybody. The reason is required, and the
+            // exemptions are printed on every run so they stay visible rather than accumulating.
+            val exemption = lines.firstOrNull { it.trim().startsWith("// USES-OKHTTP-INTERNALS:") }
+            if (exemption != null) {
+              logger.lifecycle("public-api-only: ${file.name} exempt — ${exemption.substringAfter(":").trim()}")
+              return@flatMap emptyList<String>()
+            }
+
+            lines
               .withIndex()
               .filter { (_, line) ->
                 line.startsWith("import ") && forbiddenImports.any { line.removePrefix("import ").startsWith("$it.") }
