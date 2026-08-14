@@ -15,7 +15,7 @@ Suites
 | Suite         | What it needs               | What it covers                                                      |
 |---------------|-----------------------------|---------------------------------------------------------------------|
 | `containers`  | Docker                      | SOCKS5 and HTTP proxies, TLS via MockServer, HTTP semantics via go-httpbin, chains that must be rejected, hostile responses, virtual threads (Loom) |
-| `network`     | Outbound network            | ALPN and SNI overrides, Let's Encrypt trust, ECH on the public servers |
+| `network`     | Outbound network            | ALPN and SNI overrides, Let's Encrypt trust, hostile responses in public, ECH on the public servers |
 | `android-ech` | Docker, an API 37 emulator  | Encrypted Client Hello over DoH: accepted, retried, and declined, plus the public servers |
 
 The `network` suites call servers other people operate — Google, Cloudflare, Let's Encrypt,
@@ -125,6 +125,13 @@ preference.
 
 `HostileRetryTest` **reports**, and asks the question that matters more — not whether the call
 fails but whether it is *retried*. See the note on it below.
+
+`PublicHostileTest`, in the `network` suite, asks both of testserver.host. It is not a duplicate:
+the local `/hostile/reset` sends a response head and part of a body before the RST, where
+testserver.host's `/error/reset` and `/error/close` fail with **no response at all**. That is the
+case where a client cannot know whether the server processed the request, and so the case where
+retrying is both plausible and dangerous. Agreement between the two is the expected result;
+disagreement is a finding about one of the servers, which is the reason to run both.
 
 Both use the plain port. The hostile endpoints work by hijacking the connection, which is only
 possible under HTTP/1.1; the TLS listener offers h2, where the server answers `501` with an
