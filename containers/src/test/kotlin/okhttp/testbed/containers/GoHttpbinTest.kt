@@ -104,13 +104,20 @@ class GoHttpbinTest {
   }
 
   companion object {
-    // Pinned inline rather than through libs.versions.toml, because nothing on the classpath has
-    // to agree with it — the rule MockServer's image follows doesn't apply here. Note the tag
-    // carries no `v`: the git tag is v2.25.0 and the image tag is 2.25.0.
+    // The tag comes from libs.versions.toml rather than being pinned here, because this is not
+    // the only place it appears: test-server's compose stack runs the same image for a
+    // deployment, and two pins of one image are two pins that drift. `checkImagePins` holds the
+    // compose file to the same version, and the build supplies it here.
+    private val GO_HTTPBIN_VERSION: String =
+      checkNotNull(System.getProperty("gohttpbin.version")) {
+        "gohttpbin.version is not set — run these tests through Gradle, which supplies it " +
+          "from gradle/libs.versions.toml"
+      }
+
     val GO_HTTPBIN_IMAGE: DockerImageName =
       DockerImageName
         .parse("ghcr.io/mccutchen/go-httpbin")
-        .withTag("2.25.0")
+        .withTag(GO_HTTPBIN_VERSION)
 
     /**
      * A go-httpbin container, configured the way the suites here need it.

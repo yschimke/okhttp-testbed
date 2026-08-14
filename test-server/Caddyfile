@@ -1,0 +1,27 @@
+# The independent h2/h3 stack in the compose stack. Caddy is here for its protocol support,
+# not its handlers: what a test wants from it is a second implementation of HTTP/2 framing
+# and an Alt-Svc advertisement OkHttp has to ignore gracefully, not another echo server.
+
+{
+	# A deployment reachable by name should drop this and let Caddy get a real certificate;
+	# under Testcontainers there is no name to get one for.
+	local_certs
+	auto_https disable_redirects
+	servers {
+		protocols h1 h2 h2c h3
+	}
+}
+
+# Plain, and h2c on the same port — the prior-knowledge case, which the Go standard library
+# cannot serve without a dependency outside it.
+:8081 {
+	respond /health "ok" 200
+	respond "{http.request.proto} {http.request.host}" 200
+}
+
+# TLS, offering h2 over ALPN and advertising h3 over Alt-Svc.
+:8444 {
+	tls internal
+	respond /health "ok" 200
+	respond "{http.request.proto} {http.request.host}" 200
+}

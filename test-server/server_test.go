@@ -1,0 +1,348 @@
+package main
+
+import (
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/json"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+// The behaviour these tests are about is what a client sees, so they run against real
+// listeners rather than calling handlers directly: the framing, the hijacked responses and
+// the handshake reporting only exist on a connection.
+
+func newTestServer(t *testing.T) (*server, *httptest.Server) {
+	t.Helper()
+	certs, err := loadCertificates()
+	if err != nil {
+		t.Fatalf("certificates: %v", err)
+	}
+	s := &server{certs: certs, hellos: newHelloCache()}
+	httpServer := httptest.NewServer(s.handler())
+	t.Cleanup(httpServer.Close)
+	return s, httpServer
+}
+
+// Absolute URLs are built from the Host the request arrived with, which is what makes a
+// deployment on a non-standard port behave like one on 443.
+func TestAbsoluteRedirectKeepsTheRequestedPort(t *testing.T) {
+	_, httpServer := newTestServer(t)
+
+	client := &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	response, err := client.Get(httpServer.URL + "/absolute-redirect/2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+
+	want := httpServer.URL + "/absolute-redirect/1"
+	if got := response.Header.Get("Location"); got != want {
+		t.Errorf("Location = %q, want %q", got, want)
+	}
+}
+
+func TestRedirectChainEndsAtAnything(t *testing.T) {
+	_, httpServer := newTestServer(t)
+
+	response, err := http.Get(httpServer.URL + "/redirect/3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+
+	if got := response.Request.URL.Path; got != "/anything" {
+		t.Errorf("final path = %q, want /anything", got)
+	}
+}
+
+func TestAnythingEchoesTheRequest(t *testing.T) {
+	_, httpServer := newTestServer(t)
+
+	request, err := http.NewRequest(http.MethodPut, httpServer.URL+"/anything/deep/path?q=1", strings.NewReader("body"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("X-Testbed", "yes")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+
+	var echoed echo
+	if err := json.NewDecoder(response.Body).Decode(&echoed); err != nil {
+		t.Fatal(err)
+	}
+	if echoed.Method != http.MethodPut {
+		t.Errorf("method = %q, want PUT", echoed.Method)
+	}
+	if echoed.Body != "body" {
+		t.Errorf("body = %q, want %q", echoed.Body, "body")
+	}
+	if echoed.Path != "/anything/deep/path" {
+		t.Errorf("path = %q", echoed.Path)
+	}
+	if got := echoed.Headers["X-Testbed"]; len(got) != 1 || got[0] != "yes" {
+		t.Errorf("X-Testbed = %v", got)
+	}
+	if got := echoed.Query["q"]; len(got) != 1 || got[0] != "1" {
+		t.Errorf("q = %v", got)
+	}
+}
+
+// A body that is not valid UTF-8 has to survive the round trip, and JSON cannot carry it as
+// a string.
+func TestAnythingBase64sABinaryBody(t *testing.T) {
+	_, httpServer := newTestServer(t)
+
+	response, err := http.Post(httpServer.URL+"/anything", "application/octet-stream", strings.NewReader("\xff\xfe"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+
+	var echoed echo
+	if err := json.NewDecoder(response.Body).Decode(&echoed); err != nil {
+		t.Fatal(err)
+	}
+	if echoed.Body != "" || echoed.BodyBase64 != "//4=" {
+		t.Errorf("body = %q, bodyBase64 = %q", echoed.Body, echoed.BodyBase64)
+	}
+}
+
+func TestTrailersArriveAfterTheBody(t *testing.T) {
+	_, httpServer := newTestServer(t)
+
+	response, err := http.Get(httpServer.URL + "/trailers")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+
+	// The client moves the announced names out of Header and into Trailer, keyed but empty,
+	// before the body has been read.
+	if _, announced := response.Trailer["X-Testbed-Checksum"]; !announced {
+		t.Errorf("trailers were not announced: header %v, trailer %v", response.Header, response.Trailer)
+	}
+	// Trailers are only populated once the body has been read to the end.
+	if _, err := io.ReadAll(response.Body); err != nil {
+		t.Fatal(err)
+	}
+	if got := response.Trailer.Get("X-Testbed-Checksum"); got == "" {
+		t.Error("no X-Testbed-Checksum trailer")
+	}
+}
+
+func TestConditionalGetRevalidates(t *testing.T) {
+	_, httpServer := newTestServer(t)
+
+	first, err := http.Get(httpServer.URL + "/cache")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.Body.Close()
+
+	request, err := http.NewRequest(http.MethodGet, httpServer.URL+"/cache", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("If-None-Match", first.Header.Get("ETag"))
+	second, err := http.DefaultTransport.RoundTrip(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Body.Close()
+
+	if second.StatusCode != http.StatusNotModified {
+		t.Errorf("status = %d, want 304", second.StatusCode)
+	}
+}
+
+// Each hostile endpoint has to be wrong in its own specific way, and every one of them has
+// to leave the client with an error rather than a response.
+func TestHostileEndpointsFail(t *testing.T) {
+	_, httpServer := newTestServer(t)
+
+	for _, path := range []string{
+		"/hostile/no-response",
+		"/hostile/reset",
+		"/hostile/truncated-body",
+		"/hostile/truncated-chunks",
+		"/hostile/invalid-chunk-size",
+		"/hostile/invalid-status-line",
+	} {
+		t.Run(path, func(t *testing.T) {
+			response, err := http.Get(httpServer.URL + path)
+			if err == nil {
+				_, err = io.ReadAll(response.Body)
+				response.Body.Close()
+			}
+			if err == nil {
+				t.Errorf("%s produced a complete response; it is supposed to be broken", path)
+			}
+		})
+	}
+}
+
+// The raw listener is the only place the bytes on the wire survive: net/http canonicalises
+// header names and forgets their order.
+func TestRawListenerEchoesHeaderCasingAndOrder(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() { _ = serveRaw(ln) }()
+
+	conn, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	if _, err := io.WriteString(conn, "GET /raw HTTP/1.1\r\nHost: x\r\nzZ-Odd-CASE: 1\r\nAccept: */*\r\n\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	echoed, err := io.ReadAll(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	body := string(echoed)
+	if !strings.Contains(body, "zZ-Odd-CASE: 1") {
+		t.Errorf("header casing was not preserved:\n%s", body)
+	}
+	if strings.Index(body, "zZ-Odd-CASE") > strings.Index(body, "Accept:") {
+		t.Errorf("header order was not preserved:\n%s", body)
+	}
+}
+
+// The point of the whole TLS half: /tls reports the negotiated handshake and the offer it
+// came from, over a certificate chain the client can actually verify.
+func TestTLSReportsTheHandshakeAndTheOffer(t *testing.T) {
+	s, plain := newTestServer(t)
+	if !s.certs.selfMade {
+		t.Skip("TLS_CERT_FILE is set; there is no fixture CA to trust")
+	}
+
+	tlsServer := httptest.NewUnstartedServer(s.handler())
+	tlsServer.TLS = s.tlsServer("", tlsVersions{}, true).TLSConfig
+	tlsServer.StartTLS()
+	defer tlsServer.Close()
+
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caPEMOf(t, plain)) {
+		t.Fatal("the fixture CA did not parse")
+	}
+	client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{
+		RootCAs:    pool,
+		MinVersion: tls.VersionTLS12,
+	}}}
+
+	response, err := client.Get(tlsServer.URL + "/tls")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+
+	var report handshakeReport
+	if err := json.NewDecoder(response.Body).Decode(&report); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(report.Version, "TLSv1.") {
+		t.Errorf("version = %q", report.Version)
+	}
+	if report.Offered == nil {
+		t.Fatalf("no ClientHello recorded: %s", report.OfferedUnavailable)
+	}
+	if len(report.Offered.CipherSuites) == 0 {
+		t.Error("no offered cipher suites")
+	}
+	if len(report.Offered.SupportedVersions) == 0 {
+		t.Error("no offered versions")
+	}
+}
+
+func caPEMOf(t *testing.T, plain *httptest.Server) []byte {
+	t.Helper()
+	response, err := http.Get(plain.URL + "/ca.pem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	pem, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pem
+}
+
+// The per-version listeners are the fixture a ConnectionSpec test gets pointed at, so each
+// one has to negotiate its version and refuse the others.
+func TestPerVersionListenersPinTheirVersion(t *testing.T) {
+	s, plain := newTestServer(t)
+	if !s.certs.selfMade {
+		t.Skip("TLS_CERT_FILE is set; there is no fixture CA to trust")
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caPEMOf(t, plain)) {
+		t.Fatal("the fixture CA did not parse")
+	}
+
+	for _, version := range []struct {
+		name  string
+		id    uint16
+		label string
+	}{
+		{"tls12", tls.VersionTLS12, "TLSv1.2"},
+		{"tls13", tls.VersionTLS13, "TLSv1.3"},
+	} {
+		t.Run(version.name, func(t *testing.T) {
+			tlsServer := httptest.NewUnstartedServer(s.handler())
+			tlsServer.TLS = s.tlsServer("", tlsVersions{min: version.id, max: version.id}, false).TLSConfig
+			tlsServer.StartTLS()
+			defer tlsServer.Close()
+
+			get := func(min, max uint16) (*http.Response, error) {
+				client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{
+					RootCAs:    pool,
+					MinVersion: min,
+					MaxVersion: max,
+				}}}
+				return client.Get(tlsServer.URL + "/tls")
+			}
+
+			response, err := get(version.id, version.id)
+			if err != nil {
+				t.Fatalf("a client offering only %s was refused: %v", version.label, err)
+			}
+			var report handshakeReport
+			if err := json.NewDecoder(response.Body).Decode(&report); err != nil {
+				t.Fatal(err)
+			}
+			response.Body.Close()
+			if report.Version != version.label {
+				t.Errorf("negotiated %q, want %q", report.Version, version.label)
+			}
+			if report.NegotiatedProtocol == "h2" {
+				t.Error("the per-version listeners offer http/1.1 only")
+			}
+
+			other := tls.VersionTLS12
+			if version.id == tls.VersionTLS12 {
+				other = tls.VersionTLS13
+			}
+			if response, err := get(uint16(other), uint16(other)); err == nil {
+				response.Body.Close()
+				t.Errorf("the %s listener accepted another version", version.label)
+			}
+		})
+	}
+}

@@ -1,0 +1,46 @@
+# The deployable stack: our server, plus the two third-party fixtures the roadmap says to
+# self-host rather than depend on (issue #8).
+#
+# Ports are all `${VAR:-default}`, so a deployment that can't have 8080 or 8443 sets the
+# variables and changes nothing else. Nothing in any of these servers is configured with the
+# port it is reached on — see README.md, "Ports".
+services:
+  test-server:
+    build: .
+    image: ghcr.io/yschimke/okhttp-testbed/test-server:latest
+    restart: unless-stopped
+    environment:
+      # Names the generated leaf certificate should cover, beyond localhost and the loopback
+      # addresses. Set this to the deployment's hostname.
+      CERT_HOSTS: ${CERT_HOSTS:-}
+    ports:
+      - "${HTTP_PORT:-8080}:8080"
+      - "${RAW_PORT:-8081}:8081"
+      - "${HTTPS_PORT:-8443}:8443"
+      - "${TLS10_PORT:-8410}:8410"
+      - "${TLS11_PORT:-8411}:8411"
+      - "${TLS12_PORT:-8412}:8412"
+      - "${TLS13_PORT:-8413}:8413"
+
+  # HTTP semantics: the endpoint vocabulary httpbin defined, as a Go implementation with no
+  # dependencies outside the standard library. Replaces httpbin.org and httpbingo.org, which
+  # are rate-limited and intermittently down.
+  httpbin:
+    # Tag must match `gohttpbin` in gradle/libs.versions.toml; checkImagePins enforces it.
+    image: ghcr.io/mccutchen/go-httpbin:2.25.0
+    restart: unless-stopped
+    ports:
+      - "${HTTPBIN_PORT:-8090}:8080"
+
+  # An independent HTTP/2 and HTTP/3 stack, so the h2 assertions do not all point at one
+  # server. Caddy speaks h2 and h2c out of the box and h3 over UDP, which is what makes it
+  # the Alt-Svc fixture for issue #12 as well.
+  caddy:
+    image: caddy:2.11.4-alpine
+    restart: unless-stopped
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    ports:
+      - "${CADDY_HTTP_PORT:-8091}:8081"
+      - "${CADDY_HTTPS_PORT:-8444}:8444"
+      - "${CADDY_HTTPS_PORT:-8444}:8444/udp"

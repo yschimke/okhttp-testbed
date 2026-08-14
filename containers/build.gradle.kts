@@ -24,6 +24,11 @@ tasks.withType<Test>().configureEach {
   // Single source of truth for the MockServer version: the container image tag is
   // derived from it, so the client and the server can't drift apart.
   systemProperty("mockserver.version", libs.versions.mockserver.get())
+
+  // Same rule for a different reason. Nothing on the classpath has to agree with go-httpbin,
+  // but test-server's compose stack runs the same image for a deployment — so the tag lives in
+  // the catalogue and both read it from there. checkImagePins holds the compose file to it.
+  systemProperty("gohttpbin.version", libs.versions.gohttpbin.get())
 }
 
 // BasicLoomTest reports on OkHttp rather than on this repository: it asserts that no
