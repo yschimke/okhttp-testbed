@@ -2,8 +2,8 @@ name: conscrypt
 
 # Builds the Conscrypt the ECH suites need, and caches it as a release on this repository.
 #
-# Not on every commit, and not as part of any test workflow: the build takes around fifteen
-# minutes, needs a C++ toolchain, a cross compiler and two source trees, and its output depends
+# Not on every commit, and not as part of any test workflow: the build takes several minutes,
+# needs a C++ toolchain, a cross compiler and two source trees, and its output depends
 # on nothing in this repository except `conscrypt/pinned.properties`. So it runs when that file
 # changes, or on demand, and everything else downloads what it published. The release tag carries
 # both pinned shas, which makes the cache self-invalidating: bump a pin and the tag no longer
