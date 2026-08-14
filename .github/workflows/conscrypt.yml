@@ -108,7 +108,7 @@ jobs:
       # fetched back — including on a pull request, where it exercises the fallback path.
       - name: Upload the build
         if: always() && (steps.existing.outputs.exists == 'false' || inputs.force)
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: conscrypt-${{ steps.pin.outputs.tag }}
           path: conscrypt/build/dist/

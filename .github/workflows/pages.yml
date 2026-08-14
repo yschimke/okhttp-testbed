@@ -63,7 +63,7 @@ jobs:
       # failed", and nothing is ever deployed. It is a no-op once the site exists.
       - name: Configure Pages
         id: pages
-        uses: actions/configure-pages@v5.0.0
+        uses: actions/configure-pages@v6.0.0
         with:
           enablement: true
 
@@ -156,10 +156,10 @@ jobs:
           echo "collected $(python3 -c 'import json,sys; print(len(json.load(open("site/data/issues.json"))))') open issue(s)"
 
       - name: Upload Pages Artifact
-        uses: actions/upload-pages-artifact@v4.0.0
+        uses: actions/upload-pages-artifact@v5.0.0
         with:
           path: site
 
       - name: Deploy
         id: deploy
-        uses: actions/deploy-pages@v4.0.5
+        uses: actions/deploy-pages@v5.0.0
