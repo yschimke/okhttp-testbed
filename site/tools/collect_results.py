@@ -22,6 +22,7 @@ rather than by JUnit — what it found reachable, and what its handshake offered
     <artifacts>/network-test-results-pinned/clienthello-networkTest.json
     <artifacts>/network-test-results-pinned/doh-matrix-networkTest.json
     <artifacts>/network-test-results-pinned/altsvc-networkTest.json
+    <artifacts>/network-test-results-pinned/tlspolicy-networkTest.json
 
 Output is two files:
 
@@ -358,6 +359,20 @@ def parse_alt_svc(directory: pathlib.Path) -> dict | None:
     return None
 
 
+def parse_tls_policy(directory: pathlib.Path) -> dict | None:
+    """Read what this platform did about revocation, pinning and CT, if recorded.
+
+    Per platform rather than per version, which is the axis these answers vary on — but stored
+    per artifact like the rest, since the platform is in the artifact's metadata.
+    """
+    for report in sorted(directory.glob("tlspolicy-*.json")):
+        try:
+            return json.loads(report.read_text())
+        except json.JSONDecodeError as e:
+            print(f"skipping unreadable {report}: {e}", file=sys.stderr)
+    return None
+
+
 def suite_status(suite: dict) -> str:
     if suite["failed"]:
         # Red for a suite that gates, and for one this repository is currently about. Amber for
@@ -431,6 +446,7 @@ def parse_artifact(directory: pathlib.Path) -> dict | None:
         "clientHello": parse_client_hello(directory),
         "dohMatrix": parse_doh_matrix(directory),
         "altSvc": parse_alt_svc(directory),
+        "tlsPolicy": parse_tls_policy(directory),
     }
 
 
@@ -449,6 +465,7 @@ def group_by_version(artifacts: list[dict]) -> list[dict]:
                 "clientHello": None,
                 "dohMatrix": None,
                 "altSvc": None,
+                "tlsPolicy": [],
             },
         )
         if artifact["workflow"] not in version["workflows"]:
@@ -467,6 +484,12 @@ def group_by_version(artifacts: list[dict]) -> list[dict]:
         # What the origin offered is the origin's, but what was negotiated is the version's.
         if artifact["altSvc"] and not version.get("altSvc"):
             version["altSvc"] = artifact["altSvc"]
+        # Kept per platform rather than first-wins: revocation and CT answers differ by JDK and by
+        # Android release, and that difference is the entire point of recording them.
+        if artifact["tlsPolicy"]:
+            version["tlsPolicy"].append(
+                {"platform": artifact["platform"] or "unknown", **artifact["tlsPolicy"]}
+            )
 
     for version in versions.values():
         suites = version["suites"]

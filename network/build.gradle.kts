@@ -123,6 +123,12 @@ fun Test.reportEndpointsTo(task: String) {
   val altSvc = layout.buildDirectory.file("test-results/altsvc-$task.json")
   systemProperty("testbed.altsvc.report", altSvc.get().asFile.absolutePath)
   outputs.file(altSvc)
+
+  // Revocation, pinning and CT, per platform. Recorded rather than asserted, so the file is the
+  // deliverable rather than a by-product; same one-file-per-task rule.
+  val tlsPolicy = layout.buildDirectory.file("test-results/tlspolicy-$task.json")
+  systemProperty("testbed.tlspolicy.report", tlsPolicy.get().asFile.absolutePath)
+  outputs.file(tlsPolicy)
 }
 
 val networkTest =

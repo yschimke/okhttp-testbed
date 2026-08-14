@@ -37,6 +37,20 @@ object TestServer {
   /** TLS 1.2 and 1.3, ALPN offering h2 then http/1.1. */
   const val TLS_PORT = 8443
 
+  /**
+   * A port per TLS version, the way badssl.com does it.
+   *
+   * Each listener negotiates its own version and refuses every other, which is what lets a
+   * `ConnectionSpec` assertion be about the spec rather than about what two ends happened to
+   * agree on. 1.0 and 1.1 are enabled explicitly by the server — Go refuses them by default —
+   * and may still be unreachable because the *client's* platform disabled them, which is a
+   * result worth recording rather than a fixture that failed.
+   */
+  const val TLS10_PORT = 8410
+  const val TLS11_PORT = 8411
+  const val TLS12_PORT = 8412
+  const val TLS13_PORT = 8413
+
   /** A port per chain a client must refuse. */
   const val EXPIRED_PORT = 8420
   const val WRONG_HOST_PORT = 8421
@@ -58,6 +72,10 @@ object TestServer {
     arrayOf(
       PLAIN_PORT,
       TLS_PORT,
+      TLS10_PORT,
+      TLS11_PORT,
+      TLS12_PORT,
+      TLS13_PORT,
       EXPIRED_PORT,
       WRONG_HOST_PORT,
       SELF_SIGNED_PORT,

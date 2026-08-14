@@ -489,6 +489,68 @@ function renderAltSvc(snapshot) {
   );
 }
 
+/*
+ * Revocation, pinning and Certificate Transparency, per platform.
+ *
+ * Recorded rather than judged, and the reason is the same for all three: only pinning is a promise
+ * OkHttp makes. The JVM does not check revocation unless asked, Android's answer varies by
+ * release, and OkHttp enforces no SCTs — so "accepted" here is a fact about the platform, not a
+ * verdict on it. The column that matters is how these change between platforms and versions.
+ */
+function renderTlsPolicy(snapshot) {
+  const table = document.getElementById("tls-policy-table");
+  if (!table) return;
+
+  const rows = snapshot.versions.flatMap((version) =>
+    (version.tlsPolicy || []).map((record) => ({ version, record })),
+  );
+
+  if (!rows.length) {
+    table.replaceChildren(
+      el("tbody", {}, el("tr", {}, el("td", { textContent: "No TLS policy checks recorded in this run." }))),
+    );
+    return;
+  }
+
+  // Union of the questions asked, so a check added later gets a column without this being edited.
+  const questions = [...new Set(rows.flatMap(({ record }) => Object.keys(record.checks || {})))];
+
+  table.replaceChildren(
+    el(
+      "thead",
+      {},
+      el("tr", {}, [
+        el("th", { textContent: "OkHttp" }),
+        el("th", { textContent: "Platform" }),
+        ...questions.map((q) => el("th", { textContent: q })),
+      ]),
+    ),
+    el(
+      "tbody",
+      {},
+      rows.map(({ version, record }) =>
+        el("tr", {}, [
+          el("td", { className: "suite", textContent: version.okhttpVersion }),
+          el("td", { className: "mono", textContent: record.platform || record.javaVersion || "" }),
+          ...questions.map((question) => {
+            const check = (record.checks || {})[question];
+            if (!check) return el("td", {}, el("span", { className: "pill unknown", textContent: "—" }));
+            return el("td", {}, [
+              el("span", {
+                // Neutral colours on purpose: accepting a revoked certificate is the JDK's
+                // documented behaviour, and painting it red would be calling the platform broken.
+                className: `pill ${check.accepted ? "expected" : "skipped"}`,
+                textContent: check.accepted ? "accepted" : "refused",
+                title: check.detail || "",
+              }),
+            ]);
+          }),
+        ]),
+      ),
+    ),
+  );
+}
+
 function renderHistory(history) {
   const entries = history.runs || [];
   const okhttpVersions = [
@@ -618,6 +680,7 @@ async function loadJson(path) {
     renderClientHello(snapshot);
     renderDohMatrix(snapshot);
     renderAltSvc(snapshot);
+    renderTlsPolicy(snapshot);
   } catch (e) {
     document.getElementById("run-summary").replaceChildren(
       el("span", {}, [
@@ -636,6 +699,7 @@ async function loadJson(path) {
     renderClientHello({ versions: [] });
     renderDohMatrix({ versions: [] });
     renderAltSvc({ versions: [] });
+    renderTlsPolicy({ versions: [] });
   }
 
   try {

@@ -310,6 +310,36 @@ one. The fixture is reached as `localhost`, and the JDK omits SNI for a name wit
 so requiring it would assert a fact about the container's address rather than about OkHttp. It
 is in the record either way, which is the distinction this whole section runs on.
 
+What the TLS policy checks actually check
+-----------------------------------------
+
+Three things users assume are happening, and only one of them is OkHttp's to promise.
+`CertificatePinner` is OkHttp's own, so it is asserted: `PinningTest` sends a deliberately wrong
+pin at `pinning-test.badssl.com` and requires both the refusal *and* a message listing the peer's
+real pins — the pin a caller needs is exactly the one they got wrong, and an exception without it
+sends them to a search engine rather than to the fix. The positive case is against the fixture, in
+`FixturePinningTest`, because pinning a live public chain means pinning something that rotates and
+a suite that goes red when Let's Encrypt renews is one everybody learns to ignore.
+
+Revocation and Certificate Transparency are **recorded, not asserted**. The JVM does not check
+revocation unless `com.sun.net.ssl.checkRevocation` is set and the PKIX parameters say how;
+Android varies by release; OkHttp enforces no SCTs at all. A suite insisting
+`revoked.badssl.com` "must" be refused would be reporting the platform's documented behaviour as
+a defect. So the answers go to `tlspolicy-<task>.json` and onto the status page, one row per
+platform, in neutral colours — the value is the day a row changes.
+
+A timeout is not an answer, and skips. That distinction cost a red run before it was written down:
+badssl.com timed out mid-suite and a recording test failed, which put an outage in a column meant
+for policy.
+
+`ConnectionSpecTest` is the other half, against `test-server`'s port-per-version listeners. It
+asserts what `RESTRICTED_TLS` reaches and what it does not, and that a spec with an empty
+intersection fails with something a caller can read rather than a bare connection reset. What it
+deliberately does not assert is *who* refuses TLS 1.0: modern JDKs disable it through
+`jdk.tls.disabledAlgorithms` before any spec is consulted, so the alert comes back from the
+server rejecting an offer that was too new — measured, and true even of `COMPATIBLE_TLS`, which
+permits the old versions.
+
 The resolver matrix
 -------------------
 
