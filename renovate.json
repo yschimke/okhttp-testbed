@@ -2,5 +2,20 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "local>yschimke/renovate-config"
+  ],
+  "packageRules": [
+    {
+      "description": "Stay on JUnit 5. JUnit 6 requires Java 17+ and a coordinated bump of the android-junit5 plugin, so it is not a drop-in upgrade here.",
+      "matchManagers": [
+        "gradle"
+      ],
+      "matchPackageNames": [
+        "org.junit:junit-bom",
+        "org.junit.jupiter:{/,}**",
+        "org.junit.platform:{/,}**",
+        "org.junit.vintage:{/,}**"
+      ],
+      "allowedVersions": "<6"
+    }
   ]
 }
