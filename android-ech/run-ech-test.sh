@@ -169,12 +169,15 @@ run_suite() {
     -Pandroid.testInstrumentationRunnerArguments.class="okhttp.testbed.android.ech.$class" \
     "$@" || status=$?
 
-  # A run that produced no results at all didn't fail its assertions — it never got as far as
-  # running them. The way that happens here is an APK install against an emulator whose package
-  # service is still coming up, which answers `Broken pipe` and leaves Gradle reporting zero
-  # tests. Retried once, because a suite that reported nothing is worse than a slow job: it
-  # looks like a pass on the status page and is not one.
-  if [ "$status" -ne 0 ] && [ ! -d "$results_dir" ]; then
+  # A run that recorded no test case didn't fail its assertions — it never got as far as making
+  # them, and a suite that reported nothing is worse than a slow job: on the status page it is
+  # indistinguishable from one that had nothing to say. `wait_for_device_ready` above is what
+  # stops that happening; this is the backstop for when it doesn't.
+  #
+  # The question is about test cases, not about the directory. An install that never ran still
+  # leaves the results tree behind, empty — so gating this on the directory's absence meant it
+  # never fired on the run it was written for.
+  if [ "$status" -ne 0 ] && ! grep -rqs '<testcase' "$results_dir"; then
     echo "$class produced no results; retrying once." >&2
     status=0
     "$repository_root/gradlew" -p "$repository_root" :android-ech:connectedDebugAndroidTest \
@@ -189,24 +192,6 @@ run_suite() {
   fi
   return $status
 }
-
-# The emulator reports itself booted before its package service will accept an install, and the
-# first `connectedDebugAndroidTest` of a run is what meets that. Waiting for `pm` to answer is
-# the check that matches the failure — `sys.boot_completed` on its own is already true when the
-# install fails. Best effort: on a machine where this can't be asked, the retry above still
-# covers it.
-wait_for_package_service() {
-  adb wait-for-device || return 0
-  for _ in $(seq 1 90); do
-    if adb shell pm path android >/dev/null 2>&1; then
-      return 0
-    fi
-    sleep 2
-  done
-  echo "Timed out waiting for the device's package service; running anyway." >&2
-}
-
-wait_for_package_service
 
 # The public servers first, and not allowed to fail the run. tls-ech.dev, defo.ie and
 # cloudflare-ech.com belong to other people; an outage there is not a result about OkHttp, and
