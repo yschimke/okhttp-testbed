@@ -63,6 +63,18 @@ tasks.test {
   enabled = false
 }
 
+// Where the reachability preflight publishes what it found. One file per task, because both
+// tasks run in this module's build directory and would otherwise write over each other; the
+// workflow uploads them alongside the JUnit XML and `collect_results.py` reads them into the
+// endpoint availability table. Named after the task for the same reason the XML is.
+fun Test.reportEndpointsTo(task: String) {
+  val report = layout.buildDirectory.file("test-results/endpoints-$task.json")
+
+  systemProperty("testbed.task", task)
+  systemProperty("testbed.endpoints.report", report.get().asFile.absolutePath)
+  outputs.file(report)
+}
+
 val networkTest =
   tasks.register<Test>("networkTest") {
     group = "verification"
@@ -73,6 +85,7 @@ val networkTest =
     classpath = testSourceSet.runtimeClasspath
     exclude("**/$echTestPattern.class")
 
+    reportEndpointsTo("networkTest")
     ignoreFailures = true
   }
 
@@ -92,6 +105,7 @@ val echTest =
     classpath = testSourceSet.runtimeClasspath
     include("**/$echTestPattern.class")
 
+    reportEndpointsTo("echTest")
     enabled = supportsEch
     ignoreFailures = true
 

@@ -78,7 +78,9 @@ it.
 
 The `containers` suites need Docker; the `network` suites need unrestricted outbound
 HTTPS, including to DNS-over-HTTPS at `1.1.1.1`. A network that intercepts TLS will fail
-them for its own reasons — these tests assert on what the peer saw in the handshake.
+them for its own reasons — these tests assert on what the peer saw in the handshake. The
+preflight below catches the blunter version of that, where the endpoint isn't reachable at
+all, and skips rather than fails.
 
 By default this tests the OkHttp version pinned in `gradle/libs.versions.toml`. To test
 another release, a release candidate, or a snapshot:
@@ -88,6 +90,39 @@ another release, a release candidate, or a snapshot:
 ```
 
 Snapshots resolve from Sonatype; releases from Maven Central.
+
+Endpoint preflight
+------------------
+
+A public test server that has gone away should read as *unavailable*, not as OkHttp failing.
+Every suite in `network` therefore declares what it depends on, and the dependency is probed
+before the assertions run:
+
+```kotlin
+@RequiresEndpoint(Endpoint.CLOUDFLARE_SNI, Endpoint.CLOUDFLARE_DNS)
+class SniOverrideTest {
+```
+
+If the probe fails the test is **skipped**, with the reason attached, rather than failed. If
+the probe succeeds the test runs and its failures are recorded exactly as before — a server
+that answers and then disagrees with OkHttp is the result this repository exists to catch,
+and the preflight must never swallow it. That distinction is the whole design: the probe asks
+only "is it there", never anything a test asserts.
+
+`Endpoint` names one server rather than one URL. `tls-ech.dev` publishes four hostnames that
+four tests use, but they are one machine — splitting them would report the same outage four
+times and probe it four times. Probes run on a stock `OkHttpClient` with short timeouts: the
+suites configure OkHttp in ways that are the subject of the test, and a probe carrying the
+same configuration could not tell "the server is gone" from "the thing under test is broken".
+
+Each probe runs once per JVM and the results are written to
+`network/build/test-results/endpoints-<task>.json`, which the workflow uploads and
+`collect_results.py` turns into the endpoint availability table on the status page. "Last
+reachable" is read back out of the published history, so "the DNS suite is amber" can be read
+against "Quad9 has been unreachable for three days".
+
+Adding a suite means adding its server to `Endpoint` and annotating the class. Declare what
+the test *depends on*, not everything it touches.
 
 The ECH suite
 -------------
@@ -149,26 +184,36 @@ that is the rule, and this is the documented exception to it.
 CI
 --
 
-The `containers` and `network` workflows run on push, on pull requests, and daily. The
-daily run is the point: it catches breakage that arrives from outside this repository — a
-container image that moved, a proxy that changed behaviour, a test server that stopped
-offering ECH, a regression in a published OkHttp.
+The `containers` workflow runs on push, on pull requests, and daily. The daily run is the
+point: it catches breakage that arrives from outside this repository — a container image
+that moved, a proxy that changed behaviour, a test server that stopped offering ECH, a
+regression in a published OkHttp.
 
-Each daily run covers two versions, as separate jobs:
+The `network` workflow **does not run its tests per commit**, and that is deliberate. Those
+suites are guests on servers other people pay for; tying them to commits would mean a busy
+afternoon costs those servers dozens of runs to learn what the daily run already establishes
+once. They run on the schedule, and on demand:
 
 | Job                              | Version                              | Runs on                       |
 |----------------------------------|--------------------------------------|-------------------------------|
 | `containers (pinned release)`    | the `okhttp` version in `libs.versions.toml` | every event            |
 | `containers (5.5.0-SNAPSHOT)`    | the current snapshot                 | schedule and manual runs only |
-| `network (pinned release)`       | the `okhttp` version in `libs.versions.toml` | every event            |
+| `network / compile`              | the `okhttp` version in `libs.versions.toml` | push and pull request  |
+| `network (pinned release)`       | the `okhttp` version in `libs.versions.toml` | schedule and manual runs only |
 | `network (5.5.0-SNAPSHOT)`       | the current snapshot                 | schedule and manual runs only |
 
-Push and pull request runs test one version, because those runs are about this repository.
-The snapshot job is what makes the daily schedule worth having: a regression in OkHttp's
-main branch shows up here before it reaches a release, which is only possible because the
-suites use the public API and so need no changes to run against an unreleased build.
-A `workflow_dispatch` run with an explicit `okhttpVersion` overrides both and tests only
-that version.
+What keeps the network module honest between scheduled runs is `network / compile`, which
+runs on every push and pull request touching `network/**` and calls nobody: it compiles the
+suites and runs `checkPublicApiOnly`, so a suite that stops building, or that reaches into
+`okhttp3.internal`, is caught on the commit that did it rather than the next morning.
+
+Container push and pull request runs test one version, because those runs are about this
+repository. The snapshot job is what makes the daily schedule worth having: a regression in
+OkHttp's main branch shows up here before it reaches a release, which is only possible
+because the suites use the public API and so need no changes to run against an unreleased
+build. A `workflow_dispatch` run with an explicit `okhttpVersion` overrides the matrix and
+tests only that version — which is also how to get a network answer without waiting for
+tomorrow.
 
 When OkHttp's main branch moves past 5.5.0, bump the snapshot version in the workflow's
 matrix. Snapshot runs re-resolve the artifact every time — each suite's `build.gradle.kts`
@@ -186,6 +231,11 @@ matrix runs with `fail-fast: false` so one failing version doesn't rob the other
 The `network` job's colour says nothing about its results, because neither of its tasks
 gates: a red `network` job means the build itself broke, not that a test failed. The results
 are in the XML, and on the status page.
+
+Its artifact carries one more file than the others: `endpoints-<task>.json`, written by the
+reachability preflight rather than by JUnit. Because the network workflow's per-commit job
+uploads nothing, `pages.yml` collects the most recent run *carrying artifacts* rather than
+simply the most recent run — otherwise a compile-only run would blank the network results.
 
 The `android-ech` workflow runs on the same events, on its own daily schedule, and uploads
 its results as `android-ech-test-results-<version>`. It runs one version rather than a
@@ -211,18 +261,27 @@ the `network` suite runs against today and the planned ones will grow into.
 The site is `site/`, deployed as it sits: plain HTML and CSS, no static site generator, no
 build step. The only generated files are `site/data/latest.json` and `site/data/history.json`.
 
-`.github/workflows/pages.yml` runs when a `containers` or `android-ech` run finishes on
-`main`. Whichever triggered it, it collects the most recent completed run of *both* — so a
-container run finishing doesn't blank the ECH results, or the reverse — converts the JUnit
-XML with `site/tools/collect_results.py`, and deploys. Results are keyed by OkHttp version,
-so a suite from each workflow testing `5.5.0-SNAPSHOT` lands on one card.
+`.github/workflows/pages.yml` runs when a `containers`, `network` or `android-ech` run
+finishes on `main`. Whichever triggered it, it collects the most recent artifact-bearing run
+of *all three* — so a container run finishing doesn't blank the ECH results, or the reverse —
+converts the JUnit XML with `site/tools/collect_results.py`, and deploys. Results are keyed by
+OkHttp version, so a suite from each workflow testing `5.5.0-SNAPSHOT` lands on one card.
 
 History is not committed: the workflow fetches `data/history.json` back off the deployed
 site, appends the snapshot it just built, and republishes — the deployed site is its own
 datastore, capped at the last 120 entries. A pull request's run is deliberately not
 published; it is about the pull request, not about the state of the repository.
 
-Two distinctions the page depends on, both decided when the XML is collected:
+The page leads with the results — the current status, then what failed, then the suites,
+then endpoint availability, then history. The explanation of what any of it means sits under
+those, collapsed: this is a page you return to for the state of things, not to read.
+
+Suite names on it link to the test that produced them. The link is derived from the workflow
+and the class name rather than recorded, so a new suite is linked the day it lands; the cost
+is that moving a module without updating `SOURCE_ROOTS` in `site/assets/status.js` gives a
+404 rather than a missing link.
+
+Three distinctions the page depends on, all decided when the results are collected:
 
 - The Gradle task a suite ran under decides whether a failure is **failing** or a
   **finding**. `test` failing means this repository is red; `loomTest`, `networkTest` and
@@ -232,6 +291,9 @@ Two distinctions the page depends on, both decided when the XML is collected:
   `android-ech`, where the XML is laid out by device rather than by task.
 - The version comes from `run-metadata.json`, so the page names `5.4.0` rather than
   "pinned".
+- Endpoint availability comes from `endpoints-<task>.json`, not from the XML, and is not tied
+  to an OkHttp version — a server is up or down for everyone. Where a probe disagrees between
+  tasks, `down` wins: a server that failed anybody's probe is not one to trust a result to.
 
 This needs Pages set to deploy from GitHub Actions — Settings → Pages → Source: GitHub
 Actions — which is a one-time setting on the repository, not something the workflow can do

@@ -39,6 +39,7 @@ import org.junit.jupiter.api.Test
  *
  * Ported from OkHttp's `android-test`, where it ran as a `Remote` test.
  */
+@RequiresEndpoint(Endpoint.CLOUDFLARE_SNI, Endpoint.CLOUDFLARE_DNS)
 class SniOverrideTest {
   private var client =
     OkHttpClient

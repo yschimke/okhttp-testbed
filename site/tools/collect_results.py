@@ -10,6 +10,11 @@ the `run-metadata.json` its workflow wrote:
     <artifacts>/android-ech-test-results-pinned-snapshot/run-metadata.json
     <artifacts>/android-ech-test-results-pinned-snapshot/outputs/androidTest-results/…/*.xml
 
+The network suite adds one more file per Gradle task, written by its reachability preflight
+rather than by JUnit:
+
+    <artifacts>/network-test-results-pinned/endpoints-networkTest.json
+
 Output is two files:
 
     <out>/latest.json   the current picture, with every test case
@@ -23,6 +28,12 @@ The Gradle task a suite ran under decides whether its result gates. `test` faili
 this repository is red; `loomTest`, `echTest` and `networkTest` failing are recorded
 findings — about OkHttp, about the platform, or about a server someone else operates — which
 is why the build stays green. See "Suites that report rather than gate" in the README.
+
+Endpoint availability is collected separately from results, and deliberately so: a public
+test server that has gone away should read as *unavailable* rather than as OkHttp failing.
+The preflight reports each endpoint's state, the tests that need a down endpoint skip
+themselves, and the page can then be read as "the DNS suite is amber" against "Quad9 has
+been unreachable for three days".
 """
 
 from __future__ import annotations
@@ -96,6 +107,63 @@ def parse_suite(path: pathlib.Path, task: str, workflow: str, run_url: str) -> d
     }
 
 
+def parse_endpoints(directory: pathlib.Path) -> list[dict]:
+    """Read every endpoints-<task>.json an artifact carries.
+
+    One file per Gradle task, because two tasks in the same module would otherwise write
+    over each other. An endpoint probed by both is reported once; a `down` reading wins over
+    an `up` one, since a server that failed anybody's probe is not one to trust a result to.
+    """
+    merged: dict[str, dict] = {}
+    for report in sorted(directory.glob("endpoints-*.json")):
+        try:
+            probed = json.loads(report.read_text())
+        except json.JSONDecodeError as e:
+            print(f"skipping unreadable {report}: {e}", file=sys.stderr)
+            continue
+
+        for endpoint in probed.get("endpoints", []):
+            existing = merged.get(endpoint["id"])
+            if existing is None or (existing["state"] == "up" and endpoint["state"] != "up"):
+                merged[endpoint["id"]] = dict(endpoint, probedAt=probed.get("probedAt", ""))
+
+    return sorted(merged.values(), key=lambda e: e["id"])
+
+
+def merge_endpoints(artifacts: list[dict], history: list[dict], finished_at: str) -> list[dict]:
+    """One entry per endpoint: its state now, and when it was last seen reachable.
+
+    "Last reachable" can only come from the runs before this one, so it is read back out of
+    the published history rather than kept anywhere else — the same trick the history itself
+    uses. An endpoint that has never been up in the window the history covers reports an
+    empty `lastReachableAt`, which the page shows as "not since records began" rather than
+    inventing a time for it.
+    """
+    endpoints: dict[str, dict] = {}
+    for artifact in artifacts:
+        for endpoint in artifact["endpoints"]:
+            # Same rule as within an artifact: any probe that failed makes the endpoint down.
+            existing = endpoints.get(endpoint["id"])
+            if existing is None or (existing["state"] == "up" and endpoint["state"] != "up"):
+                endpoints[endpoint["id"]] = dict(endpoint)
+
+    for endpoint in endpoints.values():
+        if endpoint["state"] == "up":
+            endpoint["lastReachableAt"] = finished_at
+            continue
+
+        endpoint["lastReachableAt"] = next(
+            (
+                run["finishedAt"]
+                for run in reversed(history)
+                if run.get("endpoints", {}).get(endpoint["id"]) == "up"
+            ),
+            "",
+        )
+
+    return sorted(endpoints.values(), key=lambda e: (e["state"] == "up", e["id"]))
+
+
 def suite_status(suite: dict) -> str:
     if suite["failed"]:
         return "finding" if suite["reporting"] else "failed"
@@ -152,6 +220,7 @@ def parse_artifact(directory: pathlib.Path) -> dict | None:
         "event": metadata.get("event", ""),
         "finishedAt": metadata.get("finishedAt", ""),
         "suites": suites,
+        "endpoints": parse_endpoints(directory),
     }
 
 
@@ -208,6 +277,10 @@ def summarise(snapshot: dict) -> dict:
             }
             for v in snapshot["versions"]
         ],
+        # Just the state, keyed by id: this is what the next run reads back to work out when an
+        # endpoint was last reachable, so it has to survive in history even though the page
+        # renders the richer form out of latest.json.
+        "endpoints": {e["id"]: e["state"] for e in snapshot["endpoints"]},
     }
 
 
@@ -257,22 +330,27 @@ def main() -> int:
         )
     collected_from.sort(key=lambda r: r["workflow"])
 
-    snapshot = {
-        # Identifies this combination of runs, so republishing the same one replaces its
-        # history entry rather than adding a second.
-        "key": "+".join(f"{r['workflow']}#{r['runNumber']}" for r in collected_from),
-        "collectedFrom": collected_from,
-        "finishedAt": max((r["finishedAt"] for r in collected_from), default=""),
-        "status": roll_up([v["status"] for v in versions]),
-        "versions": versions,
-    }
-
+    # Read before the snapshot is built, not after: an endpoint that is down now was last
+    # reachable at some point in the published history, and there is nowhere else to learn it.
     history = []
     if args.previous_history and args.previous_history.exists():
         try:
             history = json.loads(args.previous_history.read_text()).get("runs", [])
         except json.JSONDecodeError as e:
             print(f"ignoring unreadable history: {e}", file=sys.stderr)
+
+    finished_at = max((r["finishedAt"] for r in collected_from), default="")
+
+    snapshot = {
+        # Identifies this combination of runs, so republishing the same one replaces its
+        # history entry rather than adding a second.
+        "key": "+".join(f"{r['workflow']}#{r['runNumber']}" for r in collected_from),
+        "collectedFrom": collected_from,
+        "finishedAt": finished_at,
+        "status": roll_up([v["status"] for v in versions]),
+        "versions": versions,
+        "endpoints": merge_endpoints(artifacts, history, finished_at),
+    }
 
     history = [r for r in history if r.get("key") != snapshot["key"]]
     history.append(summarise(snapshot))
@@ -282,9 +360,13 @@ def main() -> int:
     (args.out / "latest.json").write_text(json.dumps(snapshot, indent=2) + "\n")
     (args.out / "history.json").write_text(json.dumps({"runs": history}, indent=2) + "\n")
 
+    down = [e["id"] for e in snapshot["endpoints"] if e["state"] != "up"]
+
     print(
         f"{len(versions)} version(s) from {len(collected_from)} run(s), "
-        f"{len(history)} entries of history, status {snapshot['status']}"
+        f"{len(history)} entries of history, status {snapshot['status']}, "
+        f"{len(snapshot['endpoints'])} endpoint(s) probed"
+        + (f", down: {', '.join(down)}" if down else "")
     )
     return 0
 

@@ -1,10 +1,24 @@
 name: network
 
+# Deliberately not on push or pull request. These suites are guests on servers other people
+# pay for — badssl asks to be treated as best-effort, nghttp2.org is one person's machine,
+# How's My SSL asks to be used only for clients you control. Tying them to commits would mean
+# a busy afternoon costs those servers dozens of runs to tell us the same thing the daily run
+# already tells us once. So the tests run on a schedule, and on demand when someone wants an
+# answer now.
+#
+# What still runs per commit is the compile job below, which touches nobody's server.
 on:
   push:
     branches:
       - main
+    paths:
+      - 'network/**'
+      - '.github/workflows/network.yml'
   pull_request:
+    paths:
+      - 'network/**'
+      - '.github/workflows/network.yml'
   schedule:
     # Daily, so a change at one of the servers these tests call — or in a published
     # OkHttp — shows up without anyone pushing to this repo.
@@ -23,8 +37,33 @@ env:
   GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false -Dkotlin.incremental=false"
 
 jobs:
+  # Keeps the module honest between scheduled runs without calling anyone: a suite that stops
+  # compiling, or that reaches into okhttp3.internal, is caught on the commit that did it
+  # rather than the next morning. Everything here resolves from Maven Central and stops there.
+  compile:
+    name: compile
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Configure JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Compile Network Suites
+        run: ./gradlew network:compileTestKotlin network:checkPublicApiOnly
+
   network:
     name: network (${{ matrix.okhttpVersion || 'pinned release' }})
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
 
     strategy:
@@ -32,16 +71,15 @@ jobs:
       # other's run, because the difference between them is the result we're after.
       fail-fast: false
       matrix:
-        # An empty entry means the release pinned in libs.versions.toml. As with the
-        # containers workflow, the scheduled and manual runs add the current snapshot;
-        # for this suite that is what covers ECH at all, since the ECH API landed after
-        # 5.4.0 and the suite is left out of the build on versions without it.
+        # An empty entry means the release pinned in libs.versions.toml. This job only runs on
+        # a schedule or on demand, and both cover the snapshot as well as the release — the
+        # snapshot is what covers ECH at all, since the ECH API landed after 5.4.0 and the
+        # suite is left out of the build on versions without it. An explicit dispatch input
+        # overrides both and tests only what was asked for.
         okhttpVersion: >-
           ${{ fromJSON(
             inputs.okhttpVersion && format('["{0}"]', inputs.okhttpVersion)
-            || ((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-                && '["", "5.5.0-SNAPSHOT"]')
-            || '[""]'
+            || '["", "5.5.0-SNAPSHOT"]'
           ) }}
 
     steps:
@@ -102,5 +140,6 @@ jobs:
           name: network-test-results-${{ matrix.okhttpVersion || 'pinned' }}
           path: |
             network/build/test-results/*/*.xml
+            network/build/test-results/endpoints-*.json
             network/build/test-results/run-metadata.json
           retention-days: 30

@@ -29,55 +29,30 @@
 <main class="wrap">
 
   <h1>Testbed status</h1>
-  <p class="lede">
-    Tests for OkHttp features that need real infrastructure behind them — containers to run
-    against, or a network to reach out over. They run daily against <em>published</em> OkHttp
-    artifacts, through the public API only, so the results compare versions rather than builds.
-  </p>
 
   <div class="run-summary" id="run-summary">Loading the most recent run…</div>
 
-  <h2>Versions under test</h2>
   <div class="cards" id="version-cards"></div>
-  <p class="note">
-    Results are grouped by the OkHttp version they were produced against, not by the workflow that
-    produced them: the container suites and the Android ECH suite both testing
-    <code>5.5.0-SNAPSHOT</code> belong on one card. The pinned release is the version in
-    <code>gradle/libs.versions.toml</code>, which every push and pull request tests; the scheduled
-    runs add the current snapshot, so a regression on OkHttp's main branch shows up here before it
-    reaches a release.
-  </p>
+
+  <section id="failures">
+    <h2>Failures and findings</h2>
+    <div id="failure-list"></div>
+  </section>
 
   <h2 id="suites">Suites</h2>
   <div class="table-scroll">
     <table id="suite-table"></table>
   </div>
-  <p class="note">
-    A suite run under <code>loomTest</code>, <code>echTest</code> or <code>networkTest</code>
-    reports rather than gates: it either asserts something about OkHttp or the platform that is
-    currently false, or it depends on a server this repository doesn't operate. A failure there is
-    a <em>finding</em> and does not turn this repository red. Everything under <code>test</code>
-    is fatal.
-  </p>
 
-  <section id="failures" hidden>
-    <h2>Failures and findings</h2>
-    <div id="failure-list"></div>
-  </section>
+  <h2 id="endpoints">Endpoints</h2>
+  <div class="table-scroll">
+    <table id="endpoint-table"></table>
+  </div>
 
   <h2>History</h2>
   <div id="history"></div>
-  <p class="note">
-    One block per published update, oldest on the left, capped at the last 120. Red is a failing
-    suite in this repository; amber is a recorded finding about OkHttp. Hover a block for its
-    counts, click it for the workflow run behind it.
-  </p>
 
   <h2>Topics</h2>
-  <p>
-    Each topic collects what the testbed covers in that area, the specifications it is testing
-    against, and the public test servers involved.
-  </p>
   <div class="topic-grid">
     <a class="topic-card" href="topics/ech.html">
       <h3>Encrypted Client Hello</h3>
@@ -107,20 +82,65 @@
     </a>
   </div>
 
-  <h2>How this page is built</h2>
-  <p>
-    The <code>containers</code> and <code>android-ech</code> workflows each upload the JUnit XML
-    from every task they run, including the tasks that report without failing. The
-    <code>pages</code> workflow rebuilds this page when either finishes, collecting the most recent
-    completed run of both — so a container run finishing doesn't blank the ECH results, or the
-    reverse — converts them to JSON, appends a summary to the history already published here, and
-    redeploys the site. Nothing is committed to the repository: the deployed site is its own
-    datastore.
-  </p>
-  <p>
-    The raw data is served alongside the page —
-    <a href="data/latest.json">latest.json</a> and <a href="data/history.json">history.json</a>.
-  </p>
+  <h2>About these results</h2>
+
+  <details class="about">
+    <summary>What is being tested, and against what</summary>
+    <p>
+      Tests for OkHttp features that need real infrastructure behind them — containers to run
+      against, or a network to reach out over. They run daily against <em>published</em> OkHttp
+      artifacts, through the public API only, so the results compare versions rather than builds.
+    </p>
+    <p>
+      Results are grouped by the OkHttp version they were produced against, not by the workflow
+      that produced them: the container suites and the Android ECH suite both testing
+      <code>5.5.0-SNAPSHOT</code> belong on one card. The pinned release is the version in
+      <code>gradle/libs.versions.toml</code>, which every push and pull request tests; the
+      scheduled runs add the current snapshot, so a regression on OkHttp's main branch shows up
+      here before it reaches a release.
+    </p>
+  </details>
+
+  <details class="about">
+    <summary>Red, amber and grey: what a result means</summary>
+    <p>
+      <span class="pill failed">failing</span> is this repository being broken, and only suites
+      run under the <code>test</code> task can report it.
+    </p>
+    <p>
+      <span class="pill finding">findings</span> is a suite run under <code>loomTest</code>,
+      <code>echTest</code> or <code>networkTest</code>. Those either assert something about OkHttp
+      or the platform that is currently false, or depend on a server this repository doesn't
+      operate. Either way the assertion stands as written and the build stays green.
+    </p>
+    <p>
+      <span class="pill skipped">not run</span> against a suite whose endpoint is down is the
+      preflight doing its job: a public test server that has gone away reads as unavailable rather
+      than as OkHttp failing. The Endpoints table above says which, and how long for.
+    </p>
+  </details>
+
+  <details class="about">
+    <summary>How this page is built</summary>
+    <p>
+      The <code>containers</code>, <code>network</code> and <code>android-ech</code> workflows each
+      upload the JUnit XML from every task they run, including the tasks that report without
+      failing, and the network workflow adds what its endpoint preflight found. The
+      <code>pages</code> workflow rebuilds this page when any of them finishes, collecting the most
+      recent completed run of all three — so a container run finishing doesn't blank the ECH
+      results, or the reverse — converts them to JSON, appends a summary to the history already
+      published here, and redeploys the site. Nothing is committed to the repository: the deployed
+      site is its own datastore.
+    </p>
+    <p>
+      The history strip keeps one block per published update, oldest on the left, capped at the
+      last 120. Hover a block for its counts, click it for the workflow run behind it.
+    </p>
+    <p>
+      The raw data is served alongside the page —
+      <a href="data/latest.json">latest.json</a> and <a href="data/history.json">history.json</a>.
+    </p>
+  </details>
 
 </main>
 
