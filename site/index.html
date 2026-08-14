@@ -112,14 +112,25 @@
   <details class="about">
     <summary>Red, amber and grey: what a result means</summary>
     <p>
-      <span class="pill failed">failing</span> is this repository being broken, and only suites
-      run under the <code>test</code> task can report it.
+      <span class="pill failed">failing</span> is either this repository being broken — suites run
+      under the <code>test</code> task — or something unpredicted going wrong in a suite marked
+      <em>critical</em> in the table above. Critical means the question that suite asks is one the
+      repository is currently trying to answer, so a surprise there is the headline. The build
+      still stays green: these suites record rather than gate, and it is this page that turns red,
+      not the workflow.
     </p>
     <p>
-      <span class="pill finding">findings</span> is a suite run under <code>loomTest</code>,
-      <code>echTest</code> or <code>networkTest</code>. Those either assert something about OkHttp
-      or the platform that is currently false, or depend on a server this repository doesn't
-      operate. Either way the assertion stands as written and the build stays green.
+      <span class="pill finding">findings</span> is an unpredicted failure in a <em>watch</em>
+      suite — one being kept honest rather than actively investigated, where a server this
+      repository doesn't operate is as likely a cause as the client.
+    </p>
+    <p>
+      <span class="pill expected">expected</span> is a failure this repository predicted and can
+      explain: the assertion is right and the answer is currently no, which is the finding rather
+      than a problem with it. ECH on the JVM is the present example — OkHttp's
+      <code>ConscryptPlatform</code> drops the config list, and no released Conscrypt has the
+      method for it to call. These are folded shut, and each carries its reason where a stack
+      trace would otherwise be. When one starts passing, it becomes an unexpected pass to look at.
     </p>
     <p>
       <span class="pill skipped">not run</span> against a suite whose endpoint is down is the

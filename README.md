@@ -494,6 +494,19 @@ Some suites here fail for reasons that are not this repository being broken. Tho
 `ignoreFailures`: the assertion stays exactly as written, the failure lands in the JUnit XML
 for the status page, and the build stays green. There are two reasons a suite qualifies.
 
+Not gating is not the same as not mattering, and treating them as the same is how a real
+regression hides. The status page separates three things a non-gating failure can be:
+
+| | shown as | means |
+|---|---|---|
+| **expected** | amber, folded shut | The repository predicted this and can say why. `EchTest`'s `JDK` cases can't pass until a Conscrypt carrying the ECH API is released — that *is* the finding, so it is recorded with its reason and kept quiet. Declared per case in `site/tools/collect_results.py`. |
+| **unexpected, critical** | red | A surprise in a suite whose question the repository is currently trying to answer. The ECH suites are critical today; move one back to `watch` when its question is settled. |
+| **unexpected, watch** | amber | A surprise in a suite being kept honest, where a server nobody here operates is as likely a cause as the client. |
+
+A skip is none of these: an endpoint the preflight found unreachable reads as unavailable
+rather than as a client that broke. And red here is the *page*, never the build — these
+suites still report rather than gate.
+
 **It asserts something about OkHttp, or about the platform, that is currently false.** That
 is a finding, and the point of recording it.
 

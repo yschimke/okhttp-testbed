@@ -30,6 +30,13 @@ this repository is red; `loomTest`, `hostileTest`, `echTest` and `networkTest` f
 recorded findings — about OkHttp, about the platform, or about a server someone else operates —
 which is why the build stays green. See "Suites that report rather than gate" in the README.
 
+Not gating is not the same as not mattering, and the two used to be conflated: every suite
+calling a server somebody else runs reported in amber, so an ECH regression and a badssl.com
+outage looked alike. Severity separates them. A `critical` suite is one this repository is
+currently *for* — an unexpected failure there is the headline, and turns the page red — while a
+`watch` suite stays amber because a failure is as likely to be the far end as the client. Both
+still record rather than gate: the build's colour is not what changes, the page's is.
+
 Endpoint availability is collected separately from results, and deliberately so: a public
 test server that has gone away should read as *unavailable* rather than as OkHttp failing.
 The preflight reports each endpoint's state, the tests that need a down endpoint skip
@@ -61,6 +68,28 @@ REPORTING_TASKS = {
 # defo.ie has no way to say it reports rather than gates except by being named here. Everything
 # else in the Android module runs against containers this repository starts.
 REPORTING_CLASSES = {"PublicEncryptedClientHelloTest"}
+
+# What this repository is currently trying to find out. Everything here reports rather than
+# gates, exactly as before; severity decides only how loudly an *unexpected* failure is shown.
+#
+# ECH is the work in flight, so its suites are critical: a case that passed yesterday and fails
+# today is the most interesting thing on the page, and burying it in the same amber as a flaky
+# third-party server is how a real regression goes unnoticed for a week. Move a suite back to
+# `watch` when its question has been answered and it is only being kept honest.
+#
+# Expected failures are unaffected — a predicted failure is amber whatever its suite's severity,
+# because it is not news. So is a skip: an endpoint that has gone away reads as unavailable, not
+# as a client that broke.
+CRITICAL_SUITES = {
+    "EchTest",
+    "EchConscryptTest",
+    "EchClientHelloTest",
+    "PublicEncryptedClientHelloTest",
+}
+
+
+def severity_of(suite_name: str) -> str:
+    return "critical" if suite_name in CRITICAL_SUITES else "watch"
 
 # Failures that are the point rather than the problem.
 #
@@ -197,6 +226,7 @@ def parse_suite(path: pathlib.Path, task: str, workflow: str, run_url: str, plat
         # and a JVM one, and "which platform" is then a property of the suite, not of the card.
         "platform": platform,
         "reporting": task in REPORTING_TASKS or simple_name in REPORTING_CLASSES,
+        "severity": severity_of(simple_name),
         "timeSeconds": float(root.get("time") or 0.0),
         "passed": sum(1 for c in cases if c["status"] == "passed"),
         # `failed` stays the count of failures nobody predicted, so every existing reader — the
@@ -282,7 +312,11 @@ def parse_client_hello(directory: pathlib.Path) -> dict | None:
 
 def suite_status(suite: dict) -> str:
     if suite["failed"]:
-        return "finding" if suite["reporting"] else "failed"
+        # Red for a suite that gates, and for one this repository is currently about. Amber for
+        # a suite being kept honest, where the far end is as likely a cause as the client.
+        if not suite["reporting"] or suite.get("severity") == "critical":
+            return "failed"
+        return "finding"
     if suite.get("expected"):
         return "expected"
     if suite["passed"]:
