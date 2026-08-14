@@ -368,6 +368,74 @@ function renderClientHello(snapshot) {
   );
 }
 
+/*
+ * What each DoH resolver said about each name.
+ *
+ * The disagreement is the content. Quad9 and AdGuard filter, by design and by different rules,
+ * so a row where they differ from Cloudflare and Google is a DNS policy result rather than a
+ * defect — which is why this is a table and not a set of red cases. `sinkholed` is the one worth
+ * looking for: an answer of 0.0.0.0 reaches a caller as a *successful* lookup that then fails to
+ * connect, which is a much quieter failure than a resolution error.
+ */
+const DOH_OUTCOMES = {
+  resolved: { status: "passed", text: "resolved" },
+  sinkholed: { status: "finding", text: "sinkholed" },
+  unresolved: { status: "expected", text: "no answer" },
+  unavailable: { status: "skipped", text: "unavailable" },
+};
+
+function renderDohMatrix(snapshot) {
+  // Recorded per run, so the newest version card that carries one is the current picture.
+  const recorded = snapshot.versions.find((v) => v.dohMatrix && v.dohMatrix.names);
+  const table = document.getElementById("doh-matrix-table");
+  if (!table) return;
+
+  const names = recorded ? Object.entries(recorded.dohMatrix.names) : [];
+  if (!names.length) {
+    table.replaceChildren(
+      el("tbody", {}, el("tr", {}, el("td", { textContent: "No resolver matrix recorded in this run." }))),
+    );
+    return;
+  }
+
+  // Union rather than the first row's keys: a resolver added to the matrix mid-file still gets
+  // a column, and one that answered nothing at all is still visibly in the table.
+  const resolvers = [...new Set(names.flatMap(([, answers]) => Object.keys(answers)))];
+
+  const rows = names.map(([hostname, answers]) =>
+    el("tr", {}, [
+      el("td", { className: "mono", textContent: hostname }),
+      ...resolvers.map((resolver) => {
+        const answer = answers[resolver];
+        if (!answer) return el("td", { textContent: "—" });
+        const outcome = DOH_OUTCOMES[answer.outcome] || { status: "unknown", text: answer.outcome };
+        const addresses = answer.addresses || [];
+        return el("td", {}, [
+          el("span", {
+            className: `pill ${outcome.status}`,
+            textContent: outcome.text,
+            // The addresses are what tell a withheld answer from an absent one by eye, but they
+            // are far too wide for a cell — so they hang off the pill rather than off the table.
+            title: addresses.length ? addresses.join("\n") : answer.detail || "",
+          }),
+        ]);
+      }),
+    ]),
+  );
+
+  table.replaceChildren(
+    el(
+      "thead",
+      {},
+      el("tr", {}, [
+        el("th", { textContent: "Name" }),
+        ...resolvers.map((resolver) => el("th", { textContent: resolver })),
+      ]),
+    ),
+    el("tbody", {}, rows),
+  );
+}
+
 function renderHistory(history) {
   const entries = history.runs || [];
   const okhttpVersions = [
@@ -495,6 +563,7 @@ async function loadJson(path) {
     renderFailures(snapshot);
     renderEndpoints(snapshot);
     renderClientHello(snapshot);
+    renderDohMatrix(snapshot);
   } catch (e) {
     document.getElementById("run-summary").replaceChildren(
       el("span", {}, [
@@ -511,6 +580,7 @@ async function loadJson(path) {
     renderFailures({ versions: [] });
     renderEndpoints({ endpoints: [] });
     renderClientHello({ versions: [] });
+    renderDohMatrix({ versions: [] });
   }
 
   try {

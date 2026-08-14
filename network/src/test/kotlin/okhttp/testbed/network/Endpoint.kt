@@ -88,6 +88,27 @@ enum class Endpoint(
     probe = Probe.Https("https://testserver.host/status/200"),
   ),
 
+  // The rest of the DoH matrix. A second implementation, and two filtering resolvers whose
+  // whole point is that they may answer differently — a name that resolves at Cloudflare and
+  // not at Quad9 is a filtering result, not a bug, and recording the difference is the point.
+  GOOGLE_DOH(
+    server = "dns.google/dns-query",
+    operator = "Google",
+    probe = Probe.Doh(url = "https://dns.google/dns-query", name = "www.google.com"),
+  ),
+
+  QUAD9_DOH(
+    server = "dns.quad9.net/dns-query",
+    operator = "Quad9",
+    probe = Probe.Doh(url = "https://dns.quad9.net/dns-query", name = "www.google.com"),
+  ),
+
+  ADGUARD_DOH(
+    server = "dns.adguard-dns.com/dns-query",
+    operator = "AdGuard",
+    probe = Probe.Doh(url = "https://dns.adguard-dns.com/dns-query", name = "www.google.com"),
+  ),
+
   // Answers with the suites, groups and signature algorithms it was offered. It asks to be used
   // only for clients you control, which one request per scheduled run is.
   HOWSMYSSL(

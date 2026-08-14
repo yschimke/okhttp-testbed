@@ -114,6 +114,11 @@
           <td>Filtering resolver; useful for checking behaviour when an answer is withheld.</td>
         </tr>
         <tr>
+          <td class="mono">https://dns.adguard-dns.com/dns-query</td>
+          <td>AdGuard</td>
+          <td>Filtering again, by different rules — so two filtering resolvers can disagree with each other rather than only with the unfiltered pair.</td>
+        </tr>
+        <tr>
           <td class="mono">The platform resolver</td>
           <td>—</td>
           <td>On Android, <code>AndroidDns</code> can return service metadata directly. Off-device this is where DoH is needed instead.</td>
@@ -122,19 +127,28 @@
     </table>
   </div>
 
+  <h2>Reading the resolver matrix</h2>
+  <p>
+    The <a href="../#doh-matrix">matrix on the status page</a> asks every resolver the same handful
+    of names each run and records what came back. Two names are assertions — a control that
+    everyone must resolve, and an <code>.invalid</code> name that nobody may — and the rest are
+    recorded without judgement, because filtering is a policy rather than a defect.
+  </p>
+  <p>
+    <code>sinkholed</code> is the outcome worth looking for. A filtering resolver can withhold an
+    answer, or it can answer <code>0.0.0.0</code>, and the second reaches a caller as a
+    <em>successful</em> lookup that then fails to connect — a far quieter failure than a resolution
+    error, and one that looks like a client bug from the inside.
+  </p>
+
   <h2>Reading a result</h2>
   <p>
     DNS failures are the most environment-sensitive results the testbed produces. Before treating
     one as an OkHttp bug, check whether the same query answers the same way from another network:
     a CI runner's egress path, a captive resolver, or a rate limit at the resolver will all show up
     as a client failure. A difference between two resolvers for the same name is a finding worth
-    keeping, not necessarily a bug in either.
-  </p>
-
-  <p class="note">
-    Network suites are not yet wired into the daily run; the <a href="../">status page</a> lists
-    the suites that exist today. This page describes what the DNS coverage will assert against when
-    it lands, and the specifications it is being written to.
+    keeping, not necessarily a bug in either — which is why a resolver that could not be reached is
+    recorded as <code>unavailable</code> rather than folded in with one that said no.
   </p>
 
 </main>
