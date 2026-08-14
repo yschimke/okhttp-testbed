@@ -14,7 +14,7 @@ Suites
 
 | Suite         | What it needs               | What it covers                                                      |
 |---------------|-----------------------------|---------------------------------------------------------------------|
-| `containers`  | Docker                      | SOCKS5 and HTTP proxies, TLS via MockServer, virtual threads (Loom)  |
+| `containers`  | Docker                      | SOCKS5 and HTTP proxies, TLS via MockServer, HTTP semantics via go-httpbin, virtual threads (Loom) |
 | `network`     | Outbound network            | ALPN and SNI overrides, Let's Encrypt trust, ECH on the public servers |
 | `android-ech` | Docker, an API 37 emulator  | Encrypted Client Hello over DoH: accepted, retried, and declined     |
 
@@ -28,6 +28,13 @@ More of them are planned. The survey they are being drawn from — which public 
 DNS test servers exist, what each one is good for, and what it is not — is published as a
 [topic page][test-servers], and broken down into issues under the
 [roadmap tracking issue][roadmap].
+
+Where a public server can be run in a container instead, it is. `go-httpbin` is a complete
+Go port of httpbin, so the HTTP semantics coverage runs against a pinned image in `containers`
+rather than against httpbin.org, which rate-limits. That makes the result deterministic — the
+container answers the same way next month as today — and leaves the public endpoint as a
+*comparison* rather than a dependency: the same assertion run against both, where the two
+disagreeing is the interesting result.
 
 The rest of the Android device matrix is still to come. One of OkHttp's `Remote` tests is
 waiting on it and could not move: `AndroidNetworksTest`, which pins a call to a
