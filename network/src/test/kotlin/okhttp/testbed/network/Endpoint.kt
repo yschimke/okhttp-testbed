@@ -88,6 +88,14 @@ enum class Endpoint(
     probe = Probe.Https("https://testserver.host/status/200"),
   ),
 
+  // Answers with the suites, groups and signature algorithms it was offered. It asks to be used
+  // only for clients you control, which one request per scheduled run is.
+  HOWSMYSSL(
+    server = "www.howsmyssl.com",
+    operator = "Jeff Hodges",
+    probe = Probe.Https("https://www.howsmyssl.com/a/check"),
+  ),
+
   DEFO_IE(
     server = "defo.ie",
     operator = "the DEfO project",

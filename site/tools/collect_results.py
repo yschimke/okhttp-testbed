@@ -10,10 +10,11 @@ the `run-metadata.json` its workflow wrote:
     <artifacts>/android-ech-test-results-pinned-snapshot/run-metadata.json
     <artifacts>/android-ech-test-results-pinned-snapshot/outputs/androidTest-results/…/*.xml
 
-The network suite adds one more file per Gradle task, written by its reachability preflight
-rather than by JUnit:
+The network suite adds two more files per Gradle task, written by the suites themselves
+rather than by JUnit — what it found reachable, and what its handshake offered:
 
     <artifacts>/network-test-results-pinned/endpoints-networkTest.json
+    <artifacts>/network-test-results-pinned/clienthello-networkTest.json
 
 Output is two files:
 
@@ -170,6 +171,21 @@ def merge_endpoints(artifacts: list[dict], history: list[dict], finished_at: str
     return sorted(endpoints.values(), key=lambda e: (e["state"] == "up", e["id"]))
 
 
+def parse_client_hello(directory: pathlib.Path) -> dict | None:
+    """Read the ClientHello record an artifact carries, if it has one.
+
+    One file per Gradle task, as with the endpoint report, but unlike endpoints these do not
+    merge: each says what a handshake offered, and two tasks in one module offer the same
+    thing. The first readable one wins.
+    """
+    for report in sorted(directory.glob("clienthello-*.json")):
+        try:
+            return json.loads(report.read_text())
+        except json.JSONDecodeError as e:
+            print(f"skipping unreadable {report}: {e}", file=sys.stderr)
+    return None
+
+
 def suite_status(suite: dict) -> str:
     if suite["failed"]:
         return "finding" if suite["reporting"] else "failed"
@@ -227,6 +243,7 @@ def parse_artifact(directory: pathlib.Path) -> dict | None:
         "finishedAt": metadata.get("finishedAt", ""),
         "suites": suites,
         "endpoints": parse_endpoints(directory),
+        "clientHello": parse_client_hello(directory),
     }
 
 
@@ -242,11 +259,16 @@ def group_by_version(artifacts: list[dict]) -> list[dict]:
                 "javaVersion": artifact["javaVersion"],
                 "workflows": [],
                 "suites": [],
+                "clientHello": None,
             },
         )
         if artifact["workflow"] not in version["workflows"]:
             version["workflows"].append(artifact["workflow"])
         version["suites"].extend(artifact["suites"])
+        # Most of a ClientHello is the platform's rather than OkHttp's, so the record is only
+        # meaningful next to the version that produced it.
+        if artifact["clientHello"] and not version.get("clientHello"):
+            version["clientHello"] = artifact["clientHello"]
 
     for version in versions.values():
         suites = version["suites"]

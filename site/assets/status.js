@@ -277,6 +277,68 @@ function renderEndpoints(snapshot) {
   }
 }
 
+/*
+ * What OkHttp's handshake offered, per version under test.
+ *
+ * Recorded rather than judged: the suite list is mostly the platform's decision, so this is a
+ * table to read across releases rather than a thing to pass or fail. The one number worth
+ * scanning for is a change.
+ */
+function renderClientHello(snapshot) {
+  const recorded = snapshot.versions.filter((v) => v.clientHello && v.clientHello.observed);
+
+  const rows = recorded.flatMap((version) =>
+    Object.entries(version.clientHello.observed).map(([service, seen]) => {
+      const suites = seen.given_cipher_suites || [];
+      const groups = seen.given_named_groups || [];
+      return el("tr", {}, [
+        el("td", { className: "suite", textContent: version.okhttpVersion }),
+        el("td", { className: "mono", textContent: version.clientHello.javaVersion || "" }),
+        el("td", { className: "mono", textContent: seen.tls_version || "" }),
+        el("td", {}, [
+          // The service's own word, not ours. "Improvable" is what a client offering CBC suites
+          // for compatibility gets, and that is worth showing rather than flattening to a tick.
+          el("span", {
+            className: `pill ${seen.rating === "Bad" ? "failed" : seen.rating === "Probably Okay" ? "passed" : "finding"}`,
+            textContent: seen.rating || "unrated",
+          }),
+        ]),
+        el("td", {}, [
+          el("details", {}, [
+            el("summary", { textContent: `${plural(suites.length, "suite")}, ${plural(groups.length, "group")}` }),
+            el("pre", { textContent: suites.join("\n") }),
+          ]),
+        ]),
+        el("td", { className: "card-label", textContent: service }),
+      ]);
+    }),
+  );
+
+  const table = document.getElementById("clienthello-table");
+  if (!rows.length) {
+    table.replaceChildren(
+      el("tbody", {}, el("tr", {}, el("td", { textContent: "No handshake recorded in this run." }))),
+    );
+    return;
+  }
+
+  table.replaceChildren(
+    el(
+      "thead",
+      {},
+      el("tr", {}, [
+        el("th", { textContent: "OkHttp" }),
+        el("th", { textContent: "Java" }),
+        el("th", { textContent: "Negotiated" }),
+        el("th", { textContent: "Rating" }),
+        el("th", { textContent: "Offered" }),
+        el("th", { textContent: "Observed by" }),
+      ]),
+    ),
+    el("tbody", {}, rows),
+  );
+}
+
 function renderHistory(history) {
   const entries = history.runs || [];
   const okhttpVersions = [
@@ -403,6 +465,7 @@ async function loadJson(path) {
     renderSuiteTable(snapshot);
     renderFailures(snapshot);
     renderEndpoints(snapshot);
+    renderClientHello(snapshot);
   } catch (e) {
     document.getElementById("run-summary").replaceChildren(
       el("span", {}, [
@@ -418,6 +481,7 @@ async function loadJson(path) {
     // there is nothing to say. An empty table under a heading reads as a broken page.
     renderFailures({ versions: [] });
     renderEndpoints({ endpoints: [] });
+    renderClientHello({ versions: [] });
   }
 
   try {

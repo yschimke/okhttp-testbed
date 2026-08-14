@@ -93,6 +93,12 @@ fun Test.reportEndpointsTo(task: String) {
   systemProperty("testbed.task", task)
   systemProperty("testbed.endpoints.report", report.get().asFile.absolutePath)
   outputs.file(report)
+
+  // What OkHttp's handshake offered, recorded rather than asserted. Same one-file-per-task rule
+  // as the endpoint report, and for the same reason.
+  val clientHello = layout.buildDirectory.file("test-results/clienthello-$task.json")
+  systemProperty("testbed.clienthello.report", clientHello.get().asFile.absolutePath)
+  outputs.file(clientHello)
 }
 
 val networkTest =

@@ -156,5 +156,6 @@ jobs:
           path: |
             network/build/test-results/*/*.xml
             network/build/test-results/endpoints-*.json
+            network/build/test-results/clienthello-*.json
             network/build/test-results/run-metadata.json
           retention-days: 30
