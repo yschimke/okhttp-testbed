@@ -29,6 +29,27 @@ DNS test servers exist, what each one is good for, and what it is not — is pub
 [topic page][test-servers], and broken down into issues under the
 [roadmap tracking issue][roadmap].
 
+Fixtures
+--------
+
+Two of them, both containers, both here rather than depended on:
+
+| Fixture       | What it is                                                                          |
+|---------------|-------------------------------------------------------------------------------------|
+| `ech-fixture` | The origin and DoH resolver the `android-ech` suite runs against. See below.          |
+| `test-server` | The testbed's own HTTP and TLS server, and the compose stack around it.               |
+
+`test-server` is what the suites will assert positive results against, and the one endpoint
+that reports what a client's handshake actually looked like: a CA it generates itself so a
+test can assert a chain *is* accepted, `/tls` reporting the negotiated handshake and the
+ClientHello it came from, a port per TLS version the way badssl.com does it, and a set of
+responses that are wrong on purpose — resets, truncated bodies, invalid framing. It is a Go
+program with nothing outside the standard library behind it, deliberately not built on
+OkHttp, because a server sharing the client's framing and TLS stack cannot say whether that
+client is acceptable to anything else. It ships alongside pinned `go-httpbin` and Caddy
+containers, which is issue #8. See [`test-server/README.md`](test-server/README.md) — it
+also covers what a deployment on a non-standard port does and does not change.
+
 The rest of the Android device matrix is still to come. One of OkHttp's `Remote` tests is
 waiting on it and could not move: `AndroidNetworksTest`, which pins a call to a
 `ConnectivityManager` network — that tests an Android platform API, not something a JVM can
