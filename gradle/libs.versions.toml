@@ -20,7 +20,7 @@ okhttp = "5.4.0"
 # yet: 5.4.0 resolves A and AAAA records only, so there is no HTTPS record to carry an
 # ECH config list. Drop this back to `okhttp` once a release ships it.
 ech-okhttp = "5.5.0-SNAPSHOT"
-org-junit-jupiter = "5.13.4"
+org-junit-jupiter = "5.14.4"
 testcontainers = "1.21.4"
 
 [libraries]
