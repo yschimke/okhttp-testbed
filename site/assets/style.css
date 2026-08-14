@@ -164,6 +164,8 @@ p, ul, ol { max-width: 46rem; }
 .pill.passed  { color: var(--pass);    background: var(--pass-bg); }
 .pill.failed  { color: var(--fail);    background: var(--fail-bg); }
 .pill.finding { color: var(--finding); background: var(--finding-bg); }
+/* A failure the repository predicted: amber like a finding, because it is one. */
+.pill.expected { color: var(--finding); background: var(--finding-bg); }
 .pill.skipped,
 .pill.unknown { color: var(--skip);    background: var(--skip-bg); }
 
@@ -230,6 +232,7 @@ p, ul, ol { max-width: 46rem; }
 
 .counts .n-passed { color: var(--pass); }
 .counts .n-failed { color: var(--fail); }
+.counts .n-expected { color: var(--finding); }
 .counts .n-skipped { color: var(--text-muted); }
 
 /* ---- tables ---- */
@@ -418,3 +421,9 @@ details.about .pill { vertical-align: baseline; }
 }
 
 .site-footer .wrap { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; }
+
+/* The reason an expected failure is expected — the thing worth reading, above the trace. */
+.expected-reason {
+  margin: 0 0 .5rem;
+  color: var(--text-muted);
+}
