@@ -340,6 +340,32 @@ deliberately does not assert is *who* refuses TLS 1.0: modern JDKs disable it th
 server rejecting an offer that was too new — measured, and true even of `COMPATIBLE_TLS`, which
 permits the old versions.
 
+The HTTPS record parameters nobody publishes
+--------------------------------------------
+
+`HttpsRecordTest` asks the public names what their `HTTPS` records carry, and they all carry the
+same two things: `alpn` and the address hints. RFC 9460 defines rather more, and the rest is close
+to unobtainable in the wild — which is exactly why a client's handling of it goes untested.
+
+So the ECH fixture's DoH resolver now publishes them, one name per parameter, each differing from
+an ordinary record in a single way, and `SvcParamTest` asks OkHttp what it makes of them:
+
+| Name | What it publishes | What OkHttp does |
+|---|---|---|
+| `nodefaultalpn.svcb.test` | `alpn=h2` with `no-default-alpn` | reports `[h2]` — the implied `http/1.1` is suppressed |
+| `mandatory.svcb.test` | `mandatory=alpn` | uses the record rather than discarding it |
+| `unknownparam.svcb.test` | an unregistered key alongside `alpn` | ignores what it does not recognise |
+| `alias.svcb.test` | AliasMode, priority 0 | surfaces no metadata; the name still resolves via its A record |
+
+The last row is a finding rather than a promise: OkHttp does not follow AliasMode, and following
+one is arguably a resolver's job. What the suite asserts there is the half that *is* a promise —
+an AliasMode record must not break ordinary resolution.
+
+The resolver is the one the Android ECH suite runs, started here in `doh` mode alone with a
+certificate this test mints and hands over in the environment. It needs `Dns.Record`, so it is
+left out of the source set below OkHttp 5.5.0 — the same gate the network module uses, now in the
+container module too.
+
 Client certificates
 -------------------
 

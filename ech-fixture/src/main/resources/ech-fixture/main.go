@@ -187,6 +187,10 @@ func dnsResponse(query []byte, echConfigs map[string][]byte, targetPort int) ([]
 	case 1: // A
 		rdata = []byte{127, 0, 0, 1}
 	case 65: // HTTPS
+		if record, ok := svcParamFixture(questionName, targetPort); ok {
+			rdata = record
+			break
+		}
 		echConfigList, ok := echConfigs[questionName]
 		if !ok {
 			return nil, fmt.Errorf("no ECH fixture for %q", questionName)
@@ -251,6 +255,69 @@ func httpsRecord(echConfigList []byte, targetPort int) []byte {
 	result = appendSvcParam(result, 4, []byte{127, 0, 0, 1})
 	result = appendSvcParam(result, 5, echConfigList)
 	return result
+}
+
+// The SvcParams nobody publishes, published.
+//
+// RFC 9460 defines rather more than the web actually uses: `alpn` and the address hints are
+// everywhere, and `no-default-alpn`, `mandatory` and AliasMode are close to unobtainable in the
+// wild — which is exactly why a client's handling of them goes untested. These names exist to be
+// asked about, and each one differs from an ordinary record in a single way.
+//
+// The names are under `.test`, reserved by RFC 2606, so they cannot collide with anything real.
+func svcParamFixture(name string, targetPort int) ([]byte, bool) {
+	port := appendUint16(nil, uint16(targetPort))
+
+	switch name {
+	// AliasMode: priority zero, and a target name instead of parameters. A client is meant to
+	// follow it to the target rather than treat it as a service binding.
+	case "alias.svcb.test":
+		result := appendUint16(nil, 0)
+		return appendDnsName(result, "green.secret.test"), true
+
+	// The default ALPN suppressed. `alpn=h2` alone means h2 *and* http/1.1 by RFC 9460 §7.1.1;
+	// with this parameter present it means h2 only, and a client that ignored it would believe an
+	// origin speaks a protocol it has explicitly disclaimed.
+	case "nodefaultalpn.svcb.test":
+		result := appendUint16(nil, 1)
+		result = append(result, 0)
+		result = appendSvcParam(result, 1, []byte{2, 'h', '2'})
+		result = appendSvcParam(result, 2, nil) // no-default-alpn, which carries no value
+		result = appendSvcParam(result, 3, port)
+		return result, true
+
+	// `mandatory` naming a parameter the client must understand or reject the record. Here it
+	// names `alpn`, which every client understands, so the record has to be *used* rather than
+	// discarded — the failure this catches is a client that treats any `mandatory` as too hard.
+	case "mandatory.svcb.test":
+		result := appendUint16(nil, 1)
+		result = append(result, 0)
+		result = appendSvcParam(result, 0, appendUint16(nil, 1)) // mandatory=alpn
+		result = appendSvcParam(result, 1, []byte{2, 'h', '2'})
+		result = appendSvcParam(result, 3, port)
+		return result, true
+
+	// An unregistered parameter key alongside ordinary ones. The registry is designed to be
+	// extended, so a client must ignore what it does not recognise rather than reject the record
+	// — forward compatibility, tested the only way it can be.
+	case "unknownparam.svcb.test":
+		result := appendUint16(nil, 1)
+		result = append(result, 0)
+		result = appendSvcParam(result, 1, []byte{2, 'h', '2'})
+		result = appendSvcParam(result, 3, port)
+		result = appendSvcParam(result, 31337, []byte("nothing here is defined"))
+		return result, true
+	}
+	return nil, false
+}
+
+// A DNS name in wire format: length-prefixed labels, then a zero byte.
+func appendDnsName(dst []byte, name string) []byte {
+	for _, label := range strings.Split(name, ".") {
+		dst = append(dst, byte(len(label)))
+		dst = append(dst, label...)
+	}
+	return append(dst, 0)
 }
 
 func appendSvcParam(dst []byte, key uint16, value []byte) []byte {
