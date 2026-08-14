@@ -58,10 +58,12 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
 
       - name: Run Network Tests
-        # --continue so a failing suite doesn't stop echTest from running: every suite
-        # should report every run, whatever the others did.
+        # Neither task gates — both carry ignoreFailures, because everything here calls a
+        # server someone else operates. --continue still earns its place: it covers the
+        # failures that happen before a test runs, so one suite failing to compile or to
+        # resolve doesn't rob the other of a result.
         run: >
-          ./gradlew network:test network:echTest --continue
+          ./gradlew network:networkTest network:echTest --continue
           ${{ matrix.okhttpVersion && format('-PokhttpVersion={0}', matrix.okhttpVersion) || '' }}
 
       # What the XML can't say: which OkHttp version 'pinned' actually resolved to, and
@@ -91,8 +93,8 @@ jobs:
           }
           JSON
 
-      # Both tasks' XML, including echTest's, which records findings without failing the
-      # build. The status page reads results from here, not from the job's colour.
+      # Both tasks' XML. Neither fails the build, so the job's colour says nothing about the
+      # results — the status page reads them from here, and shows them as findings.
       - name: Upload Test Results
         if: always()
         uses: actions/upload-artifact@v4

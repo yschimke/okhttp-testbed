@@ -67,13 +67,14 @@ Requires Docker and JDK 21+.
 
 ```
 ./gradlew containers:test containers:loomTest
-./gradlew network:test network:echTest
+./gradlew network:networkTest network:echTest
 ```
 
-`test` covers the gating suites and fails the build. `loomTest` and `echTest` run
-`BasicLoomTest` and `EchTest` separately with `ignoreFailures`, because those suites report
-on OkHttp rather than on this repository — see
-[Suites that report rather than gate](#suites-that-report-rather-than-gate).
+`test` covers the gating suites and fails the build. `loomTest`, `networkTest` and `echTest`
+all run with `ignoreFailures`, because what they report is not this repository being broken —
+see [Suites that report rather than gate](#suites-that-report-rather-than-gate). `network`
+has no gating task at all: its `test` task is disabled, so those two are the only way to run
+it.
 
 The `containers` suites need Docker; the `network` suites need unrestricted outbound
 HTTPS, including to DNS-over-HTTPS at `1.1.1.1`. A network that intercepts TLS will fail
@@ -182,6 +183,10 @@ version `pinned` actually resolved to — which is what the status page is built
 runs with `--continue` so one failing suite doesn't rob the others of a result, and the
 matrix runs with `fail-fast: false` so one failing version doesn't rob the other.
 
+The `network` job's colour says nothing about its results, because neither of its tasks
+gates: a red `network` job means the build itself broke, not that a test failed. The results
+are in the XML, and on the status page.
+
 The `android-ech` workflow runs on the same events, on its own daily schedule, and uploads
 its results as `android-ech-test-results-<version>`. It runs one version rather than a
 matrix — the snapshot — because that is the only version with the API the suite needs. It
@@ -220,9 +225,10 @@ published; it is about the pull request, not about the state of the repository.
 Two distinctions the page depends on, both decided when the XML is collected:
 
 - The Gradle task a suite ran under decides whether a failure is **failing** or a
-  **finding**. `test` failing means this repository is red; `loomTest` failing is a recorded
-  finding about OkHttp, and the page shows it in amber — see below. A suite's task comes
-  from the artifact layout for the container suites, and from `run-metadata.json` for
+  **finding**. `test` failing means this repository is red; `loomTest`, `networkTest` and
+  `echTest` failing are recorded findings, and the page shows them in amber — see below. A
+  suite's task comes
+  from the artifact layout for the container and network suites, and from `run-metadata.json` for
   `android-ech`, where the XML is laid out by device rather than by task.
 - The version comes from `run-metadata.json`, so the page names `5.4.0` rather than
   "pinned".
@@ -243,12 +249,14 @@ python3 -m http.server --directory site 8000
 Suites that report rather than gate
 -----------------------------------
 
-Some tests here assert something about OkHttp that is currently false. That is a finding,
-not a broken test, and it shouldn't read as this repository being red — so those suites run
-under `ignoreFailures`: the assertion stays exactly as written, the failure lands in the
-JUnit XML for the status page, and the build stays green.
+Some suites here fail for reasons that are not this repository being broken. Those run under
+`ignoreFailures`: the assertion stays exactly as written, the failure lands in the JUnit XML
+for the status page, and the build stays green. There are two reasons a suite qualifies.
 
-Two suites are in this category. `BasicLoomTest.testHttpsRequest` asserts that no virtual
+**It asserts something about OkHttp, or about the platform, that is currently false.** That
+is a finding, and the point of recording it.
+
+`BasicLoomTest.testHttpsRequest` asserts that no virtual
 thread pins its carrier, and against OkHttp 5.4.0 on JDK 21 one does:
 
 ```
@@ -261,7 +269,7 @@ VirtualThread[#51]/runnable@ForkJoinPool-1-worker-3 reason:MONITOR
 JEP 491 removes this class of pinning on JDK 24+, so the same test should pass there —
 which is exactly the kind of difference this repository exists to record.
 
-`EchTest` is the other. ECH takes two halves: OkHttp reads an ECH config list out of the
+`EchTest` is the other of that kind. ECH takes two halves: OkHttp reads an ECH config list out of the
 DNS HTTPS record, and the TLS stack encrypts the client hello with it. OkHttp's half works
 on the JVM — the routes carry a config list, which is what the `echConfigList` assertions
 check — but the JDK's TLS stack has no ECH, so the servers report back that the connection
@@ -269,10 +277,25 @@ was not protected and the assertions about what they saw fail. Android does have
 API 37, which is why the same test passes in OkHttp's `android-test`. When a JVM TLS stack
 gains ECH, this suite is how we will find out.
 
+**It depends on a server this repository does not operate.** A rate limit at a CDN, a
+certificate renewed overnight, a runner behind a captive resolver — none of those is a result
+about OkHttp, and none of them should turn this repository red. That covers the whole
+`network` module, whose `test` task is disabled so that everything in it runs under
+`networkTest` or `echTest`. Disabling the gating task rather than excluding one class from it
+is deliberate too: a suite added to `network` later cannot end up gating the build by being
+written in the wrong file.
+
+The trade is that a genuine break in a `network` suite — one this repository caused — reports
+in amber rather than red. That is the right way round while every test in the module is
+reaching out over the internet: the alternative is a red repository most mornings, which
+teaches everyone to ignore the colour. Coverage that could gate belongs in `containers`,
+against something we run — which is what
+[issue #8](https://github.com/yschimke/okhttp-testbed/issues/8) is for.
+
 Everything else stays fatal. That is deliberate: a fatal `test` task is what caught the
 MockServer client/server version mismatch on the first run that reached a Docker daemon.
-Move a suite into the reporting category only when it is asserting about OkHttp's
-behaviour, never to quiet a test that is genuinely broken here.
+Move a suite into the reporting category for one of the two reasons above, never to quiet a
+test that is genuinely broken here.
 
 Reading a failure
 -----------------

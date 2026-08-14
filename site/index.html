@@ -53,9 +53,11 @@
     <table id="suite-table"></table>
   </div>
   <p class="note">
-    A suite run under <code>loomTest</code> reports rather than gates: it asserts something about
-    OkHttp that is currently false, so a failure there is a <em>finding</em> about the published
-    artifact and does not turn this repository red. Everything under <code>test</code> is fatal.
+    A suite run under <code>loomTest</code>, <code>echTest</code> or <code>networkTest</code>
+    reports rather than gates: it either asserts something about OkHttp or the platform that is
+    currently false, or it depends on a server this repository doesn't operate. A failure there is
+    a <em>finding</em> and does not turn this repository red. Everything under <code>test</code>
+    is fatal.
   </p>
 
   <section id="failures" hidden>

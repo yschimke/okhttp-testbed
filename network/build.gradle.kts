@@ -50,16 +50,38 @@ sourceSets {
   }
 }
 
-// EchTest reports on OkHttp rather than on this repository, the way containers' BasicLoomTest
-// does. It asserts that a call really is protected by ECH, which needs both the DNS half —
-// OkHttp reading an ECH config list out of an HTTPS record, which works here — and the TLS half:
-// a stack that can encrypt the client hello. The JDK's can't, so the handshake assertions fail on
-// the JVM today. That is a finding about the platform, recorded in the JUnit XML, not this repo
-// being broken, so the assertions stand as written and the build stays green. See the README.
+// Nothing in this module gates. Every test here calls a server someone else operates —
+// Google, Cloudflare, Let's Encrypt, tls-ech.dev, defo.ie — and so can fail for reasons that
+// are nothing to do with OkHttp or with this repository: a rate limit, a certificate renewed
+// overnight, a runner behind a captive resolver. That is the loomTest situation, a result
+// worth recording rather than a build worth failing, so `test` is disabled here and every
+// suite runs under a task carrying ignoreFailures. See the README.
+//
+// Disabling `test` rather than moving one class out of it is the point: a suite added here
+// later cannot end up gating the build by being written in the wrong file.
 tasks.test {
-  exclude("**/$echTestPattern.class")
+  enabled = false
 }
 
+val networkTest =
+  tasks.register<Test>("networkTest") {
+    group = "verification"
+    description = "Runs the suites that call public servers. Records failures without failing the build."
+
+    val testSourceSet = sourceSets.test.get()
+    testClassesDirs = testSourceSet.output.classesDirs
+    classpath = testSourceSet.runtimeClasspath
+    exclude("**/$echTestPattern.class")
+
+    ignoreFailures = true
+  }
+
+// EchTest stays its own task rather than joining networkTest, for two reasons that have
+// nothing to do with gating — both tasks already report. It is the one suite left out of the
+// build entirely below 5.5.0, so it needs its own `enabled`; and its failures say something
+// different from the rest of the module. A networkTest failure is usually about a server or
+// the route to it, where an EchTest failure is about the JDK's TLS stack being unable to
+// encrypt a client hello. Separate tasks keep those apart on the status page.
 val echTest =
   tasks.register<Test>("echTest") {
     group = "verification"
@@ -83,7 +105,7 @@ if (!supportsEch) {
 }
 
 tasks.check {
-  dependsOn(echTest)
+  dependsOn(networkTest, echTest)
 }
 
 dependencies {
