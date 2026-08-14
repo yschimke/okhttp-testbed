@@ -79,20 +79,26 @@ jobs:
           mkdir -p artifacts
           found=false
           for workflow in $TEST_WORKFLOWS; do
-            run_id=$(gh run list --workflow "$workflow" --branch main --status completed \
-              --limit 1 --json databaseId --jq '.[0].databaseId // empty')
-            if [ -z "$run_id" ]; then
+            # The most recent run that actually carries results, not simply the most recent
+            # one. Several things produce a completed run with no artifacts: the network
+            # workflow's per-commit compile job, which deliberately runs no tests; a job that
+            # died before its tests could report; a run old enough that its artifacts have
+            # expired. Walking back a few runs finds the last real one instead of blanking a
+            # workflow's results because the newest run had nothing to say.
+            run_ids=$(gh run list --workflow "$workflow" --branch main --status completed \
+              --limit 10 --json databaseId --jq '.[].databaseId')
+            if [ -z "$run_ids" ]; then
               echo "no completed $workflow run on main yet"
               continue
             fi
-            # A run whose artifacts have expired, or that died before uploading any, is not
-            # a reason to fail the build: the other workflow may still have results.
-            if gh run download "$run_id" --dir artifacts; then
-              echo "collected $workflow run $run_id"
-              found=true
-            else
+            for run_id in $run_ids; do
+              if gh run download "$run_id" --dir artifacts 2>/dev/null; then
+                echo "collected $workflow run $run_id"
+                found=true
+                break
+              fi
               echo "no artifacts on $workflow run $run_id"
-            fi
+            done
           done
           echo "found=$found" >> "$GITHUB_OUTPUT"
 

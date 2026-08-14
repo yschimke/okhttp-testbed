@@ -48,6 +48,7 @@ import org.junit.jupiter.api.Test
  * of the cases there don't cross over: the `AndroidDns` variant, and the one covering a host
  * excluded by `network_security_config.xml` — both are Android platform behaviour, not OkHttp's.
  */
+@RequiresEndpoint(Endpoint.CLOUDFLARE_DOH)
 class EchTest {
   private lateinit var client: OkHttpClient
 
@@ -73,6 +74,7 @@ class EchTest {
   }
 
   @Test
+  @RequiresEndpoint(Endpoint.CLOUDFLARE_ECH)
   fun cloudflareUsesEch() {
     val call = client.newCall(Request("https://cloudflare-ech.com/cdn-cgi/trace".toHttpUrl()))
     call.execute().use { response ->
@@ -84,6 +86,7 @@ class EchTest {
   }
 
   @Test
+  @RequiresEndpoint(Endpoint.TLS_ECH_DEV)
   fun echIsAcceptedOnTlsEchDev() {
     val call = client.newCall(Request("https://tls-ech.dev/".toHttpUrl()))
     call.execute().use { response ->
@@ -99,6 +102,7 @@ class EchTest {
   }
 
   @Test
+  @RequiresEndpoint(Endpoint.TLS_ECH_DEV)
   fun echIsRetriedOnStaleTlsEchDev() {
     val call = client.newCall(Request("https://stale.tls-ech.dev/".toHttpUrl()))
     call.execute().use { response ->
@@ -119,6 +123,7 @@ class EchTest {
    * on that server.
    */
   @Test
+  @RequiresEndpoint(Endpoint.TLS_ECH_DEV)
   fun echIsAcceptedOnWrongTlsEchDev() {
     val verifiedHostnames = mutableListOf<String>()
     val hostnameVerifier = client.hostnameVerifier
@@ -144,6 +149,7 @@ class EchTest {
 
   /** TLS 1.2 cannot carry ECH. */
   @Test
+  @RequiresEndpoint(Endpoint.TLS_ECH_DEV)
   fun tlsIsNotUsedOnTls12TlsEchDev() {
     val call = client.newCall(Request("https://tls12.tls-ech.dev/".toHttpUrl()))
     call.execute().use { response ->
@@ -160,6 +166,7 @@ class EchTest {
   }
 
   @Test
+  @RequiresEndpoint(Endpoint.DEFO_IE)
   fun echIsAcceptedOnDefoIe() {
     val call = client.newCall(Request("https://defo.ie/ech-check.php".toHttpUrl()))
     call.execute().use { response ->

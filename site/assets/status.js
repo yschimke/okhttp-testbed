@@ -1,7 +1,7 @@
 /*
  * Renders the status page from the JSON the pages workflow generates.
  *
- * data/latest.json  the current picture, with every test case
+ * data/latest.json  the current picture, with every test case and every endpoint probed
  * data/history.json one summary per collection, oldest first
  *
  * Both are written by site/tools/collect_results.py, from the most recent run of each test
@@ -30,6 +30,36 @@ const pill = (status) =>
   el("span", { className: `pill ${status}`, textContent: STATUS_TEXT[status] || status });
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/*
+ * Where a suite's source lives, from the workflow that ran it and its fully qualified name.
+ *
+ * Every suite here follows one layout, so the link can be derived rather than recorded: the
+ * workflow names the module, and the class name is the path under it. Deriving it means a new
+ * suite is linked the day it lands, with nothing to keep in step; the cost is that moving a
+ * module without updating this map produces a 404 rather than a missing link.
+ */
+const REPO = "https://github.com/yschimke/okhttp-testbed";
+
+const SOURCE_ROOTS = {
+  containers: "containers/src/test/kotlin",
+  network: "network/src/test/kotlin",
+  "android-ech": "android-ech/src/androidTest/kotlin",
+};
+
+function sourceUrl(suite) {
+  const root = SOURCE_ROOTS[suite.workflow];
+  if (!root || !suite.className) return null;
+  return `${REPO}/blob/main/${root}/${suite.className.replaceAll(".", "/")}.kt`;
+}
+
+/** A suite's name, linked to the test that produced it where we can work out where it lives. */
+function suiteLink(suite, className = "suite-name") {
+  const href = sourceUrl(suite);
+  return href
+    ? el("a", { className, href, textContent: suite.name, title: suite.className })
+    : el("span", { className, textContent: suite.name });
+}
 
 function formatWhen(iso) {
   if (!iso) return "unknown time";
@@ -113,7 +143,7 @@ function renderSuiteTable(snapshot) {
   const rows = suiteNames.map((name) => {
     const any = versions.flatMap((v) => v.suites).find((s) => s.name === name);
     return el("tr", {}, [
-      el("td", { className: "suite", textContent: name }),
+      el("td", { className: "suite" }, any ? suiteLink(any) : name),
       el("td", { className: "mono", textContent: any ? any.workflow : "" }),
       el("td", { className: "mono", textContent: any ? any.task : "" }),
       ...versions.map((version) => {
@@ -140,37 +170,111 @@ function renderSuiteTable(snapshot) {
 }
 
 function renderFailures(snapshot) {
+  // Failures first, then findings, then the tests that never ran. A skip belongs here rather
+  // than only in a count: "this didn't run because defo.ie is down" is the answer to the
+  // question a red-looking number would otherwise raise.
+  const rank = { failed: 0, finding: 1, skipped: 2 };
   const items = [];
+
   for (const version of snapshot.versions) {
     for (const suite of version.suites) {
       for (const testCase of suite.cases) {
-        if (testCase.status !== "failed") continue;
-        const kind = suite.reporting ? "finding" : "failed";
-        const detail = el("details", { className: "finding-detail" }, [
+        if (testCase.status === "passed") continue;
+        const kind =
+          testCase.status === "skipped" ? "skipped"
+          : suite.reporting ? "finding"
+          : "failed";
+
+        const source = sourceUrl(suite);
+        // Open, because the assertion is the reason to come back to this page — a triangle to
+        // click before you can read it is one more step for the thing you came for. Skips are
+        // the exception: the reason is one line, and the Endpoints table already carries it.
+        const detail = el("details", { className: "finding-detail", open: kind !== "skipped" }, [
           el("summary", {}, [
             pill(kind),
             ` ${suite.name}.${testCase.name} — ${version.okhttpVersion}`,
           ]),
+          // The trace usually opens with the message verbatim, so printing both repeats the
+          // one line that matters. Show the message alone only when it isn't already there.
           el("pre", {
-            textContent: [testCase.message, testCase.detail].filter(Boolean).join("\n\n"),
+            textContent:
+              (testCase.detail?.startsWith(testCase.message)
+                ? testCase.detail
+                : [testCase.message, testCase.detail].filter(Boolean).join("\n\n")) ||
+              "No detail recorded.",
           }),
+          source
+            ? el("p", { className: "card-label" }, [
+                el("a", { href: source, textContent: `${suite.className} ↗` }),
+              ])
+            : null,
         ]);
         detail.dataset.kind = kind;
-        items.push(detail);
+        items.push({ kind, detail });
       }
     }
   }
 
-  const section = document.getElementById("failures");
+  items.sort((a, b) => rank[a.kind] - rank[b.kind]);
+
   const body = document.getElementById("failure-list");
   if (!items.length) {
     body.replaceChildren(
-      el("p", { textContent: "No failures or findings in this run." }),
+      el("p", { textContent: "Everything ran, and everything passed." }),
     );
   } else {
-    body.replaceChildren(...items);
+    body.replaceChildren(...items.map((item) => item.detail));
   }
-  section.hidden = false;
+}
+
+function renderEndpoints(snapshot) {
+  const endpoints = snapshot.endpoints || [];
+
+  const head = el("tr", {}, [
+    el("th", { textContent: "Server" }),
+    el("th", { textContent: "Operator" }),
+    el("th", { textContent: "State" }),
+    el("th", { textContent: "Last reachable" }),
+    el("th", { textContent: "Probe" }),
+  ]);
+
+  const rows = endpoints.map((endpoint) => {
+    // An endpoint's state is not a test result, so it borrows the pills rather than owning a
+    // vocabulary of its own: up reads as passing, down as failing. The consequence — which
+    // suites got skipped — is in the table above.
+    const up = endpoint.state === "up";
+    return el("tr", {}, [
+      el("td", { className: "suite", textContent: endpoint.server }),
+      el("td", { textContent: endpoint.operator || "" }),
+      el("td", {}, [
+        el("span", {
+          className: `pill ${up ? "passed" : "failed"}`,
+          textContent: up ? "reachable" : "unreachable",
+        }),
+        endpoint.detail
+          ? el("span", { className: "card-label", textContent: ` ${endpoint.detail}` })
+          : null,
+      ]),
+      el("td", {
+        className: "card-label",
+        textContent: up
+          ? "now"
+          : endpoint.lastReachableAt
+            ? formatWhen(endpoint.lastReachableAt)
+            : "not since records began",
+      }),
+      el("td", { className: "mono", textContent: endpoint.target || "" }),
+    ]);
+  });
+
+  const table = document.getElementById("endpoint-table");
+  if (!rows.length) {
+    table.replaceChildren(
+      el("tbody", {}, el("tr", {}, el("td", { textContent: "No endpoints probed in this run." }))),
+    );
+  } else {
+    table.replaceChildren(el("thead", {}, head), el("tbody", {}, rows));
+  }
 }
 
 function renderHistory(history) {
@@ -184,9 +288,11 @@ function renderHistory(history) {
       const version = entry.versions.find((v) => v.okhttpVersion === okhttpVersion);
       const status = version ? version.status : "unknown";
       const when = (entry.finishedAt || "").slice(0, 10);
+      // `skipped` is guarded because history accumulates on the deployed site: rows published
+      // before the field existed are still in the file and must not render "undefined skipped".
       const title = version
         ? `${when} ${okhttpVersion}: ${STATUS_TEXT[status]} — ` +
-          `${version.passed} passed, ${version.failed} failed`
+          `${version.passed} passed, ${version.failed} failed, ${version.skipped ?? 0} skipped`
         : `${when} ${okhttpVersion}: not tested`;
       const source = (entry.collectedFrom || [])[0];
       return el("a", { className: `${status}`, href: source ? source.runUrl : "#", title });
@@ -219,17 +325,22 @@ async function loadJson(path) {
     renderVersionCards(snapshot);
     renderSuiteTable(snapshot);
     renderFailures(snapshot);
+    renderEndpoints(snapshot);
   } catch (e) {
     document.getElementById("run-summary").replaceChildren(
       el("span", {}, [
         "No published results yet. They appear here after the ",
         el("a", {
-          href: "https://github.com/yschimke/okhttp-testbed/actions/workflows/containers.yml",
+          href: `${REPO}/actions/workflows/containers.yml`,
           textContent: "containers workflow",
         }),
         ` runs. (${e.message})`,
       ]),
     );
+    // The sections are in the page unconditionally now, so they have to say something when
+    // there is nothing to say. An empty table under a heading reads as a broken page.
+    renderFailures({ versions: [] });
+    renderEndpoints({ endpoints: [] });
   }
 
   try {

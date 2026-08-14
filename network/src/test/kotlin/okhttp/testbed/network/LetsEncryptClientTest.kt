@@ -36,6 +36,7 @@ import org.junit.jupiter.api.Test
  *
  * Ported from OkHttp's `android-test`, where it ran as a `Remote` test.
  */
+@RequiresEndpoint(Endpoint.LETSENCRYPT)
 class LetsEncryptClientTest {
   @Test
   fun getWithPlatformTrustedCertificates() {
