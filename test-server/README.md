@@ -17,7 +17,14 @@ It covers three things nothing else here does:
   a good one is *accepted* needs a CA nobody else can change.
 - **The handshake, reported back.** `/tls` answers with the negotiated version, suite and
   ALPN protocol, and with the offer they were chosen from — the client's supported versions,
-  cipher suites, curves and signature schemes. That is issue #17's local half.
+  cipher suites, curves and signature schemes, and the IDs of the extensions it sent, in
+  order. That is issue #17's local half. The extension list is most of what a JA3 or JA4
+  fingerprint is computed from; the extensions' *contents* are parsed away by `crypto/tls`
+  and are not reported, so this answers what OkHttp offered rather than exactly how a CDN
+  would fingerprint it. GREASE values (RFC 8701) are named as such rather than left as
+  sixteen mystery hex codes, and `encryptedClientHelloOffered` calls out extension `0xfe0d`
+  specifically: a client with no ECH configuration is meant to send one anyway, so that
+  using ECH and not using it look alike, and whether it was real is deliberately invisible.
 - **Responses that are wrong on purpose.** `/hostile/…` hijacks the connection and writes
   resets, truncated bodies and invalid framing directly. `http.ResponseWriter` exists to
   stop a handler emitting nonsense, so nothing above the socket can produce these.

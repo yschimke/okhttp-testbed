@@ -268,6 +268,36 @@ func TestTLSReportsTheHandshakeAndTheOffer(t *testing.T) {
 	if len(report.Offered.SupportedVersions) == 0 {
 		t.Error("no offered versions")
 	}
+	// The extension list is what the GREASE question is asked through, so an empty one would
+	// make that suite pass vacuously against a server that never recorded anything.
+	if len(report.Offered.Extensions) == 0 {
+		t.Error("no offered extensions")
+	}
+	// Go's own client has no ECH configuration here and does not GREASE, so this is the
+	// negative case: a false that means "not offered" rather than "never looked".
+	if report.Offered.EncryptedClientHelloOffered {
+		t.Error("Go's client offered encrypted_client_hello with nothing configured")
+	}
+}
+
+func TestExtensionNames(t *testing.T) {
+	for _, c := range []struct {
+		extension uint16
+		want      string
+	}{
+		{0, "server_name"},
+		{extensionEncryptedClientHello, "encrypted_client_hello"},
+		// RFC 8701's sixteen reserved values, named rather than left as mystery hex.
+		{0x0a0a, "GREASE(0x0a0a)"},
+		{0xfafa, "GREASE(0xfafa)"},
+		// Not GREASE: the halves differ, so the pattern must not match on the low byte alone.
+		{0x1a2a, "0x1a2a"},
+		{0x1234, "0x1234"},
+	} {
+		if got := extensionName(c.extension); got != c.want {
+			t.Errorf("extensionName(0x%04x) = %q, want %q", c.extension, got, c.want)
+		}
+	}
 }
 
 func caPEMOf(t *testing.T, plain *httptest.Server) []byte {

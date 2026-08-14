@@ -332,9 +332,12 @@ type handshakeReport struct {
 	CertificateSelfMade bool             `json:"certificateSelfMade"`
 }
 
-// The offer. Note what is missing: crypto/tls hands a server the parsed fields, not the
-// ClientHello's extension list or its order, so this is not enough to compute a JA3 or JA4
-// fingerprint. It answers what OkHttp offered; it does not answer how a CDN fingerprints it.
+// The offer.
+//
+// The extension IDs arrive in the order the client sent them, which is most of what a JA3 or
+// JA4 fingerprint is computed from. The rest — the raw extension *contents* — crypto/tls parses
+// and does not hand back, so this still answers what OkHttp offered rather than exactly how a
+// CDN would fingerprint it.
 type clientHelloInfo struct {
 	SupportedVersions []string `json:"supportedVersions"`
 	CipherSuites      []string `json:"cipherSuites"`
@@ -345,6 +348,13 @@ type clientHelloInfo struct {
 	SignatureSchemes []string `json:"signatureSchemes"`
 	ALPNProtocols    []string `json:"alpnProtocols"`
 	ServerName       string   `json:"serverName"`
+	Extensions       []string `json:"extensions"`
+	// True when extension 0xfe0d was offered at all, which is the question GREASE asks: a client
+	// with no ECH configuration is meant to send one anyway, so that a client using ECH and a
+	// client not using it look the same on the wire. Whether *this* one was real or GREASE is
+	// not visible from here — indistinguishability is the design — so the name is deliberately
+	// "offered" rather than "used".
+	EncryptedClientHelloOffered bool `json:"encryptedClientHelloOffered"`
 }
 
 func (s *server) handshake(r *http.Request) *handshakeReport {
@@ -381,6 +391,13 @@ func (s *server) handshake(r *http.Request) *handshakeReport {
 		SupportedCurves:  []string{},
 		SignatureSchemes: []string{},
 		SupportedPoints:  []int{},
+		Extensions:       []string{},
+	}
+	for _, extension := range hello.Extensions {
+		offered.Extensions = append(offered.Extensions, extensionName(extension))
+		if extension == extensionEncryptedClientHello {
+			offered.EncryptedClientHelloOffered = true
+		}
 	}
 	if offered.ALPNProtocols == nil {
 		offered.ALPNProtocols = []string{}
@@ -402,6 +419,55 @@ func (s *server) handshake(r *http.Request) *handshakeReport {
 	}
 	report.Offered = offered
 	return report
+}
+
+// RFC 9849 §5, the extension a GREASE-ing client sends even with nothing to put in it.
+const extensionEncryptedClientHello = 0xfe0d
+
+// The extensions worth naming. The list is the ones a modern client actually sends, not the
+// whole IANA registry: an unnamed extension is reported as its hex code, which is readable
+// enough to look up and honest about not being recognised here.
+var extensionNames = map[uint16]string{
+	0:                             "server_name",
+	1:                             "max_fragment_length",
+	5:                             "status_request",
+	10:                            "supported_groups",
+	11:                            "ec_point_formats",
+	13:                            "signature_algorithms",
+	14:                            "use_srtp",
+	16:                            "application_layer_protocol_negotiation",
+	17:                            "status_request_v2",
+	18:                            "signed_certificate_timestamp",
+	21:                            "padding",
+	22:                            "encrypt_then_mac",
+	23:                            "extended_master_secret",
+	27:                            "compress_certificate",
+	35:                            "session_ticket",
+	41:                            "pre_shared_key",
+	42:                            "early_data",
+	43:                            "supported_versions",
+	44:                            "cookie",
+	45:                            "psk_key_exchange_modes",
+	47:                            "certificate_authorities",
+	49:                            "post_handshake_auth",
+	50:                            "signature_algorithms_cert",
+	51:                            "key_share",
+	extensionEncryptedClientHello: "encrypted_client_hello",
+	0xff01:                        "renegotiation_info",
+	0x4469:                        "application_settings",
+}
+
+func extensionName(extension uint16) string {
+	if name, ok := extensionNames[extension]; ok {
+		return name
+	}
+	// GREASE reserves the sixteen values whose halves are equal and end in 0xa (RFC 8701). A
+	// client sends them to keep servers tolerant of unknown values, so naming them as such
+	// stops sixteen mystery hex codes from reading like sixteen unrecognised extensions.
+	if extension&0x0f0f == 0x0a0a && extension>>8 == extension&0xff {
+		return fmt.Sprintf("GREASE(0x%04x)", extension)
+	}
+	return fmt.Sprintf("0x%04x", extension)
 }
 
 func versionName(version uint16) string {
