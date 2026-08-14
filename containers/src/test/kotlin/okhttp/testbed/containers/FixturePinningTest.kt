@@ -27,6 +27,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.tls.HandshakeCertificates
+import okhttp3.tls.HeldCertificate
 import okhttp3.tls.decodeCertificatePem
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -106,14 +107,25 @@ class FixturePinningTest {
   }
 
   /**
-   * The same client, one character of the pin different, is refused.
+   * A pin belonging to some other certificate is refused.
    *
    * The control for the case above. Without it, a `CertificatePinner` that had stopped checking
    * anything at all would pass [theRightPinIsAccepted] just as happily.
+   *
+   * The wrong pin is a real pin of a real certificate, minted here and used nowhere. An earlier
+   * version edited the last character of the correct one instead, which CI caught and a local run
+   * did not — because it only collides *sometimes*. A pin is base64 of 32 bytes, so its final
+   * character carries four significant bits and two of padding; swapping `A=` for `B=` changes
+   * only padding and decodes to the identical hash. The fixture mints a fresh certificate per
+   * container, so that landed about one run in sixteen: a test that would have looked like a
+   * mystery flake for as long as anyone was willing to re-run it.
+   *
+   * Deriving a "different" pin from a correct one is the trap. Taking one from a different
+   * certificate cannot collide.
    */
   @Test
   fun aPinForADifferentCertificateIsRefused() {
-    val wrong = leafPin.dropLast(2) + if (leafPin.endsWith("A=")) "B=" else "A="
+    val wrong = CertificatePinner.pin(HeldCertificate.Builder().build().certificate)
 
     val client =
       trustingClient()
