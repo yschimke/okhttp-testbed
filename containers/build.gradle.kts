@@ -29,6 +29,11 @@ tasks.withType<Test>().configureEach {
   // but test-server's compose stack runs the same image for a deployment — so the tag lives in
   // the catalogue and both read it from there. checkImagePins holds the compose file to it.
   systemProperty("gohttpbin.version", libs.versions.gohttpbin.get())
+
+  // BadChainTest builds test-server's image rather than pulling one, so it needs the build
+  // context. Supplied here rather than reached for with a relative path, which would depend on
+  // the working directory the tests happen to run in.
+  systemProperty("testbed.testServerDir", rootProject.layout.projectDirectory.dir("test-server").asFile.absolutePath)
 }
 
 // BasicLoomTest reports on OkHttp rather than on this repository: it asserts that no
@@ -63,6 +68,10 @@ tasks.check {
 
 dependencies {
   testImplementation("com.squareup.okhttp3:okhttp:$okhttpVersion")
+
+  // A real trust manager from the fixture CA, without a KeyStore dance and without weakening
+  // verification. okhttp-tls is published, so this stays inside the public-API-only rule.
+  testImplementation("com.squareup.okhttp3:okhttp-tls:$okhttpVersion")
 
   testImplementation(libs.junit.jupiter.api)
   testImplementation(libs.junit.jupiter.params)

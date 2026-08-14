@@ -1,8 +1,12 @@
 FROM golang:1.24-alpine AS build
 
 WORKDIR /src
-COPY go.mod .
-COPY *.go .
+# The trailing slash is load-bearing. BuildKit accepts a bare `.` for a multi-file COPY, and
+# `docker build` uses BuildKit — but Testcontainers builds through the Docker API's classic
+# builder, which rejects it: "When using COPY with more than one source file, the destination
+# must be a directory and end with a /". BadChainTest builds this image that way.
+COPY go.mod ./
+COPY *.go ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /test-server .
 
 FROM alpine:3.23

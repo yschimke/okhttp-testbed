@@ -14,7 +14,7 @@ Suites
 
 | Suite         | What it needs               | What it covers                                                      |
 |---------------|-----------------------------|---------------------------------------------------------------------|
-| `containers`  | Docker                      | SOCKS5 and HTTP proxies, TLS via MockServer, HTTP semantics via go-httpbin, virtual threads (Loom) |
+| `containers`  | Docker                      | SOCKS5 and HTTP proxies, TLS via MockServer, HTTP semantics via go-httpbin, chains that must be rejected, virtual threads (Loom) |
 | `network`     | Outbound network            | ALPN and SNI overrides, Let's Encrypt trust, ECH on the public servers |
 | `android-ech` | Docker, an API 37 emulator  | Encrypted Client Hello over DoH: accepted, retried, and declined, plus the public servers |
 
@@ -83,6 +83,25 @@ Two things enforce that, rather than leaving it to good intentions:
   `check`, before every `test` task, and before the Android suite's `connected…AndroidTest`
   task, which `check` doesn't cover. Extend `forbiddenImports` in the root
   `build.gradle.kts` as new dependencies arrive.
+
+Chains that must be rejected
+----------------------------
+
+`BadChainTest` points OkHttp at the five listeners `test-server` mints for the purpose —
+expired, wrong host, self-signed, untrusted root, and a chain missing its intermediate — and
+asserts that each handshake fails. It gates, and it should: nothing third-party is in the loop,
+the image is built from this repository, and OkHttp accepting any of these would be a defect in
+the published artifact rather than a fact about somebody's server.
+
+Two things keep it honest. It trusts the fixture CA properly, through `okhttp-tls`, rather than
+installing a permissive trust manager — verification is the thing under test, so weakening it
+would empty the suite. And it asserts a *positive control* first: the same client, trusting the
+same CA, completing a handshake against the good listener. Without that, a fixture that had
+broken in some general way would make every rejection pass for the wrong reason.
+
+The assertion is `SSLException`, not a specific subclass. Which one a client reports for a bad
+chain is the client's business; pinning it would turn a change in OkHttp's error reporting into
+a failure about certificate validation.
 
 Where a test needs something the public API doesn't offer, prefer solving it with the
 container instead of reaching into OkHttp — for example `BasicMockServerTest.trustMockServer()`
