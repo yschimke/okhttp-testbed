@@ -21,7 +21,7 @@ okhttp = "5.4.0"
 # ECH config list. Drop this back to `okhttp` once a release ships it.
 ech-okhttp = "5.5.0-SNAPSHOT"
 org-junit-jupiter = "5.14.4"
-testcontainers = "1.21.4"
+testcontainers = "2.0.5"
 
 [libraries]
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidx-test-runner" }
@@ -32,11 +32,11 @@ junit-jupiter-params = { module = "org.junit.jupiter:junit-jupiter-params", vers
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junit-platform" }
 junit5android-core = { module = "de.mannodermaus.junit5:android-test-core", version.ref = "android-junit5" }
 junit5android-runner = { module = "de.mannodermaus.junit5:android-test-runner", version.ref = "android-junit5" }
-mockserver = { module = "org.testcontainers:mockserver", version.ref = "testcontainers" }
+mockserver = { module = "org.testcontainers:testcontainers-mockserver", version.ref = "testcontainers" }
 mockserver-client = { module = "org.mock-server:mockserver-client-java-no-dependencies", version.ref = "mockserver" }
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
 testcontainers = { module = "org.testcontainers:testcontainers", version.ref = "testcontainers" }
-testcontainers-junit5 = { module = "org.testcontainers:junit-jupiter", version.ref = "testcontainers" }
+testcontainers-junit5 = { module = "org.testcontainers:testcontainers-junit-jupiter", version.ref = "testcontainers" }
 
 [plugins]
 android-junit5 = { id = "de.mannodermaus.android-junit5", version.ref = "android-junit5" }
