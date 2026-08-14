@@ -33,7 +33,9 @@ android {
   defaultConfig {
     minSdk = 21
 
-    testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    // An AndroidJUnitRunner that calls OkHttp.initialize first. See EchTestRunner for why the
+    // library's own androidx Startup initializer doesn't cover an instrumentation APK.
+    testInstrumentationRunner = "okhttp.testbed.android.ech.EchTestRunner"
     testInstrumentationRunnerArguments +=
       mapOf(
         // The suite is JUnit 5, as the JVM suites are.
