@@ -38,6 +38,15 @@ object TestServer {
   const val TLS_PORT = 8443
 
   /**
+   * Not an HTTP server: it echoes the request head back byte for byte.
+   *
+   * `net/http` canonicalises header names and keeps no record of their order, so `/anything`
+   * reports what Go parsed rather than what OkHttp sent. Header order and casing are half of how
+   * a CDN fingerprints a client, and this is the only port where a test can see them.
+   */
+  const val RAW_PORT = 8081
+
+  /**
    * A port per TLS version, the way badssl.com does it.
    *
    * Each listener negotiates its own version and refuses every other, which is what lets a
@@ -82,6 +91,7 @@ object TestServer {
     arrayOf(
       PLAIN_PORT,
       TLS_PORT,
+      RAW_PORT,
       TLS10_PORT,
       TLS11_PORT,
       TLS12_PORT,

@@ -21,12 +21,18 @@ import assertk.assertions.doesNotContain
 import assertk.assertions.isEqualTo
 import assertk.assertions.isGreaterThan
 import assertk.assertions.isInstanceOf
+import assertk.assertions.isNotNull
+import java.io.File
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.InetAddress
 import java.net.SocketTimeoutException
 import java.time.Duration
+import java.util.concurrent.atomic.AtomicInteger
+import okhttp3.Cache
 import okhttp3.Cookie
+import okhttp3.Credentials
+import okhttp3.MultipartBody
 import okhttp3.Dns
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -217,6 +223,155 @@ class HttpSemanticsTest {
     assertThat(callTimeout.message.orEmpty(), name = "what a call timeout says").contains("timeout")
   }
 
+  /**
+   * A response served from the cache the second time, without going to the network.
+   *
+   * `Cache` is opt-in, so the assertion is about the wiring: given a cache and a response that
+   * permits caching, the second call is answered locally. `networkResponse` being absent is what
+   * says so — a revalidation would still be a network round trip, and the fixture's `/cache`
+   * response is fresh enough not to need one.
+   */
+  @Test
+  fun aCacheableResponseIsServedFromTheCache() {
+    val directory = File.createTempFile("testbed-cache", "").let { it.delete(); it }
+    val client = client().newBuilder().cache(Cache(directory, CACHE_BYTES)).build()
+
+    try {
+      val first = client.newCall(Request.Builder().url(url("/cache")).build()).execute()
+      first.use {
+        assertThat(it.code, name = "first request").isEqualTo(200)
+        assertThat(it.networkResponse, name = "the first response came from the network").isNotNull()
+      }
+
+      client.newCall(Request.Builder().url(url("/cache")).build()).execute().use {
+        assertThat(it.code, name = "second request").isEqualTo(200)
+        assertThat(it.cacheResponse, name = "the second response came from the cache").isNotNull()
+        assertThat(it.networkResponse, name = "and did not go to the network").isEqualTo(null)
+      }
+    } finally {
+      client.cache?.close()
+      directory.deleteRecursively()
+    }
+  }
+
+  /**
+   * An `Authenticator` is asked once, and the answer is used.
+   *
+   * The credential arrives on the *retry*, not the first request: that is the whole shape of the
+   * mechanism, and a client that sent it eagerly would leak it to every server that never asked.
+   */
+  @Test
+  fun anAuthenticatorSuppliesCredentialsOnTheRetry() {
+    val calls = AtomicInteger()
+    val client =
+      client()
+        .newBuilder()
+        .authenticator { _, response ->
+          calls.incrementAndGet()
+          // Giving up when the credential we already sent was refused: returning it again is how
+          // an authenticator loops forever.
+          if (response.request.header("Authorization") != null) {
+            null
+          } else {
+            response.request.newBuilder().header("Authorization", Credentials.basic(USER, PASSWORD)).build()
+          }
+        }.build()
+
+    client.newCall(Request.Builder().url(url("/basic-auth/$USER/$PASSWORD")).build()).execute().use {
+      assertThat(it.code, name = "with an authenticator that knows the password").isEqualTo(200)
+    }
+
+    assertThat(calls.get(), name = "times the authenticator was consulted").isEqualTo(1)
+  }
+
+  /**
+   * An authenticator that never gives up is stopped by OkHttp rather than looping.
+   *
+   * The bound is the library's, and it is the only thing standing between a mistaken
+   * `Authenticator` and an infinite retry against somebody's login endpoint.
+   */
+  @Test
+  fun anAuthenticatorThatNeverGivesUpIsBounded() {
+    val client =
+      client()
+        .newBuilder()
+        .authenticator { _, response ->
+          response.request.newBuilder().header("Authorization", Credentials.basic("wrong", "wrong")).build()
+        }.build()
+
+    val failure =
+      try {
+        client.newCall(Request.Builder().url(url("/basic-auth/$USER/$PASSWORD")).build()).execute().use {
+          throw AssertionError("an authenticator that always retries produced HTTP ${it.code}")
+        }
+      } catch (e: IOException) {
+        e
+      }
+
+    assertThat(failure.message.orEmpty(), name = "the bound on authenticator retries").contains("follow-up")
+  }
+
+  /**
+   * A multipart body arrives as one, and `Expect: 100-continue` does not break it.
+   *
+   * Multipart is where a client writes a body it also has to describe — boundaries, part headers,
+   * a trailing delimiter — and getting any of it wrong produces a request the server parses into
+   * something else rather than rejecting.
+   */
+  @Test
+  fun aMultipartBodyArrivesIntact() {
+    val body =
+      MultipartBody
+        .Builder()
+        .setType(MultipartBody.FORM)
+        .addFormDataPart("field", "value")
+        .addFormDataPart("file", "note.txt", "contents".toRequestBody())
+        .build()
+
+    val echoed = echo(Request.Builder().url(url("/anything")).post(body).build())
+
+    assertThat(echoed, name = "the server's view of a multipart body").contains("multipart/form-data")
+    assertThat(echoed, name = "the parts").contains("field")
+
+    val continued =
+      echo(
+        Request
+          .Builder()
+          .url(url("/anything"))
+          .header("Expect", "100-continue")
+          .post("body".toRequestBody())
+          .build(),
+      )
+
+    assertThat(continued, name = "a body sent after 100-continue").contains("body")
+  }
+
+  /**
+   * What OkHttp actually put on the wire, recorded rather than judged.
+   *
+   * `/anything` reports what Go *parsed*: `net/http` canonicalises header names and keeps no
+   * record of their order, and both are half of how a CDN fingerprints a client. The raw listener
+   * echoes the head byte for byte, so this is the only place the difference is visible.
+   *
+   * Almost nothing is asserted, for the same reason `ClientHelloTest` asserts almost nothing: the
+   * header set is a platform and version decision, and pinning it would turn an OkHttp upgrade
+   * into a failed test. What is asserted is that the request is well-formed HTTP/1.1 and carries
+   * the header OkHttp adds on the caller's behalf, since transparent gzip depends on it.
+   */
+  @Test
+  fun theRequestHeadIsRecorded() {
+    val head =
+      client()
+        .newCall(Request.Builder().url(rawUrl("/recorded")).build())
+        .execute()
+        .use { it.body.string() }
+
+    assertThat(head, name = "the request line").contains("GET /recorded HTTP/1.1")
+    assertThat(head, name = "the Host header").contains("Host:")
+    assertThat(head, name = "what OkHttp asks for on the caller's behalf").contains("Accept-Encoding: gzip")
+    assertThat(head, name = "the agent").contains("User-Agent: okhttp/")
+  }
+
   private fun timeoutFailure(client: OkHttpClient): IOException =
     try {
       client.newCall(Request.Builder().url(url("/delay/5")).build()).execute().use {
@@ -263,6 +418,8 @@ class HttpSemanticsTest {
 
   private fun url(path: String) = "http://${server.host}:${server.getMappedPort(TestServer.PLAIN_PORT)}$path".toHttpUrl()
 
+  private fun rawUrl(path: String) = "http://${server.host}:${server.getMappedPort(TestServer.RAW_PORT)}$path".toHttpUrl()
+
   /** Just enough of a jar to see the round trip happen. */
   private class RecordingCookieJar : okhttp3.CookieJar {
     val stored = mutableListOf<Cookie>()
@@ -283,6 +440,11 @@ class HttpSemanticsTest {
 
     /** A second name for the same container, so a redirect can cross hosts without leaving it. */
     const val OTHER_NAME = "elsewhere.semantics.test"
+
+    const val USER = "testbed"
+    const val PASSWORD = "hunter2"
+
+    const val CACHE_BYTES = 10L * 1024 * 1024
 
     @Container
     @JvmStatic

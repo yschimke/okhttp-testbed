@@ -340,6 +340,21 @@ deliberately does not assert is *who* refuses TLS 1.0: modern JDKs disable it th
 server rejecting an offer that was too new — measured, and true even of `COMPATIBLE_TLS`, which
 permits the old versions.
 
+What OkHttp puts on the wire
+----------------------------
+
+`test-server`'s raw listener is not an HTTP server: it echoes the request head back byte for byte.
+That matters because `/anything` reports what Go *parsed* — `net/http` canonicalises header names
+and keeps no record of their order, and both are half of how a CDN fingerprints a client. It is
+the only place the difference is visible, and `HttpSemanticsTest.theRequestHeadIsRecorded` is
+where it is read.
+
+Almost nothing about it is asserted, for the same reason `ClientHelloTest` asserts almost nothing:
+the header set is a platform and version decision, and pinning it would turn an OkHttp upgrade
+into a failed test. What is asserted is that the request is well-formed and carries
+`Accept-Encoding: gzip`, which OkHttp adds on the caller's behalf and transparent decompression
+depends on.
+
 The HTTPS record parameters nobody publishes
 --------------------------------------------
 
