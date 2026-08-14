@@ -1,0 +1,125 @@
+name: test-server
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'test-server/**'
+      - '.github/workflows/test-server.yml'
+  pull_request:
+    paths:
+      - 'test-server/**'
+      - '.github/workflows/test-server.yml'
+  schedule:
+    # Daily, for the same reason the suites run daily: the base images move, and a
+    # deployment built from an image that no longer builds is worth knowing about
+    # before it is needed.
+    - cron: '41 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}/test-server
+
+jobs:
+  test-server:
+    name: build and smoke test
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      # Only the push to main publishes; a pull request build gets a read-only token and
+      # skips that step.
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Configure Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: test-server/go.mod
+
+      - name: Vet and Test
+        working-directory: test-server
+        run: |
+          test -z "$(gofmt -l .)" || { gofmt -d .; exit 1; }
+          go vet ./...
+          go test ./...
+
+      - name: Build Image
+        run: docker build -t "$IMAGE:ci" test-server
+
+      # The tests above cover the server; this covers the image. A container that starts,
+      # answers on every listener it advertises, and hands back a CA a client can verify
+      # with is the whole contract a deployment has to meet.
+      - name: Smoke Test the Image
+        run: |
+          set -euo pipefail
+
+          # Deliberately not the default ports. If anything in here were configured with
+          # the port it is reached on, this is the step that would catch it.
+          docker run -d --name test-server \
+            -p 18080:8080 -p 18081:8081 -p 18443:8443 \
+            -p 18410:8410 -p 18411:8411 -p 18412:8412 -p 18413:8413 \
+            "$IMAGE:ci"
+
+          for _ in $(seq 30); do
+            curl -fsS http://127.0.0.1:18080/health && break
+            sleep 1
+          done
+
+          curl -fsS http://127.0.0.1:18080/info
+          curl -fsS -o ca.pem http://127.0.0.1:18080/ca.pem
+
+          echo '== the absolute redirect has to come back on the port it was asked on'
+          curl -fsS -D- -o /dev/null http://127.0.0.1:18080/absolute-redirect/2 \
+            | grep -qi '^location: http://127.0.0.1:18080/'
+
+          echo '== h2 over ALPN, and the handshake report'
+          curl -fsS --cacert ca.pem -o /dev/null -w '%{http_version}\n' https://127.0.0.1:18443/health \
+            | grep -qx 2
+          curl -fsS --cacert ca.pem https://127.0.0.1:18443/tls | grep -q '"negotiatedProtocol": "h2"'
+
+          echo '== a port per TLS version, each pinned to its own'
+          curl -fsS --cacert ca.pem --tlsv1.2 --tls-max 1.2 -o /dev/null https://127.0.0.1:18412/health
+          curl -fsS --cacert ca.pem --tlsv1.3 -o /dev/null https://127.0.0.1:18413/health
+          ! curl -fsS --cacert ca.pem --tls-max 1.2 -o /dev/null https://127.0.0.1:18413/health
+
+          echo '== the raw listener echoes the request head'
+          printf 'GET /raw HTTP/1.1\r\nHost: x\r\nzZ-Odd-CASE: 1\r\n\r\n' \
+            | timeout 5 nc 127.0.0.1 18081 | grep -q 'zZ-Odd-CASE: 1'
+
+          echo '== the hostile endpoints are broken on purpose'
+          ! curl -fsS --max-time 5 -o /dev/null http://127.0.0.1:18080/hostile/reset
+
+      - name: Container Logs
+        if: always()
+        run: docker logs test-server || true
+
+      - name: Validate the Compose Stack
+        working-directory: test-server
+        run: docker compose config --quiet
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Published as both a moving tag and the commit that built it, so a deployment can
+      # pin the way the suites pin their images.
+      - name: Publish Image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          docker tag "$IMAGE:ci" "$IMAGE:latest"
+          docker tag "$IMAGE:ci" "$IMAGE:${{ github.sha }}"
+          docker push "$IMAGE:latest"
+          docker push "$IMAGE:${{ github.sha }}"

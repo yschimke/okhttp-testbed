@@ -1,0 +1,24 @@
+FROM golang:1.24-alpine AS build
+
+WORKDIR /src
+COPY go.mod .
+COPY *.go .
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /test-server .
+
+FROM alpine:3.23
+
+# curl earns its place: the image's own healthcheck uses it, and so does anyone debugging a
+# deployment from inside the container.
+RUN apk add --no-cache curl ca-certificates
+
+COPY --from=build /test-server /test-server
+
+# Plain HTTP, the raw echo listener, TLS, and a port per TLS version. Every one of these is
+# an env var away from being something else — see README.md.
+EXPOSE 8080 8081 8443 8410 8411 8412 8413
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=2s --retries=3 \
+  CMD curl -fsS http://127.0.0.1:8080/health || exit 1
+
+USER nobody
+ENTRYPOINT ["/test-server"]
