@@ -3,7 +3,7 @@
 # Builds Conscrypt's OpenJDK artifact from the pinned google3-export commit, against the
 # pinned BoringSSL commit, and stages the result under conscrypt/build/dist.
 #
-# This is deliberately not part of the Gradle build. It takes around fifteen minutes, needs
+# This is deliberately not part of the Gradle build. It takes several minutes, needs
 # a C++ toolchain and a cross compiler, and its output changes only when `pinned.properties`
 # changes — so it runs in its own workflow and its output is cached as a release. Suites get
 # the jar from `fetch-conscrypt.sh`, which downloads that release. See README.md.

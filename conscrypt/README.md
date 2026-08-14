@@ -40,7 +40,7 @@ The API this suite uses is `Conscrypt.setEchConfigList(SSLSocket, byte[])`.
 How it's built and cached
 -------------------------
 
-The build takes about fifteen minutes, needs a C++ toolchain and two source trees, and its output
+The build takes several minutes, needs a C++ toolchain and two source trees, and its output
 depends on nothing in this repository except `pinned.properties`. So it does not happen in a test
 workflow. The `conscrypt` workflow builds it when that file changes and publishes the jars as a
 release; the release tag carries both pinned shas, so bumping a pin invalidates the cache by
