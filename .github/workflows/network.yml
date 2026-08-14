@@ -47,16 +47,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Configure JDK
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v5.7.0
         with:
           distribution: 'temurin'
           java-version: 21
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6
+        uses: gradle/actions/setup-gradle@v6.3.0
 
       # Without this the Conscrypt suites are left out of the source set and a change that
       # breaks them compiles clean. Failure is not fatal here: a pull request that bumps the
@@ -91,16 +91,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Configure JDK
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v5.7.0
         with:
           distribution: 'temurin'
           java-version: 21
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6
+        uses: gradle/actions/setup-gradle@v6.3.0
 
       # The ECH suites' other half: a Conscrypt that can encrypt a client hello, which is not
       # published anywhere. Downloaded rather than built — the build is its own workflow, and
@@ -150,7 +150,7 @@ jobs:
       # results — the status page reads them from here, and shows them as findings.
       - name: Upload Test Results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: network-test-results-${{ matrix.okhttpVersion || 'pinned' }}
           path: |

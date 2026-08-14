@@ -75,10 +75,36 @@ object ConscryptEch {
       init(null, arrayOf(trustManager), null)
     }
 
-  /** The JVM's default trust manager. */
+  /**
+   * Conscrypt's trust manager, trusting whatever the JVM trusts.
+   *
+   * Conscrypt's, rather than the JDK's, because Conscrypt names the authentication type `GENERIC`
+   * for TLS 1.3 and the JDK's validator has a fixed list that the name isn't on. Every case in
+   * [EchConscryptTest] failed on that, before a client hello was sent:
+   *
+   *     javax.net.ssl.SSLHandshakeException: Unknown authType: GENERIC
+   *     Caused by: java.security.cert.CertificateException: Unknown authType: GENERIC
+   *         at sun.security.validator.EndEntityChecker.checkTLSServer(EndEntityChecker.java:290)
+   *
+   * `org.conscrypt.TrustManagerImpl` does its own validation and never reaches that checker, so
+   * the name is not a problem it has. Two nearby things do not work, both tried and both reported
+   * by a run:
+   *
+   *  * Wrapping the JDK's in an [javax.net.ssl.X509ExtendedTrustManager] to reach the
+   *    socket-aware overload. Conscrypt calls the two-argument method through
+   *    `Platform.checkServerTrusted` regardless, so the failure was unchanged — and being
+   *    extended stopped Conscrypt finding [EchEnablingTrustManager.getNetworkSecurityPolicy],
+   *    which turned ECH off entirely.
+   *  * `Conscrypt.getDefaultX509TrustManager()`, which on OpenJDK returns
+   *    `sun.security.ssl.X509TrustManagerImpl` — the JDK's, not Conscrypt's. The factory below is
+   *    what actually produces Conscrypt's.
+   *
+   * The trust anchors are the same either way: passing a null [java.security.KeyStore] reads the
+   * JVM's default trust store.
+   */
   fun platformTrustManager(): X509TrustManager =
     TrustManagerFactory
-      .getInstance(TrustManagerFactory.getDefaultAlgorithm())
+      .getInstance("PKIX", Conscrypt.newProvider())
       .apply { init(null as KeyStore?) }
       .trustManagers
       .filterIsInstance<X509TrustManager>()
