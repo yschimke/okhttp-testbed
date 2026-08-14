@@ -4,7 +4,7 @@ android-junit5 = "2.0.1"
 androidx-test-runner = "1.7.0"
 assertk = "0.28.1"
 junit-platform = "1.14.4"
-kotlin = "2.2.21"
+kotlin = "2.4.10"
 # Must match the mockserver/mockserver image tag; the client refuses to talk to a
 # server whose major.minor differs. Injected into the tests as mockserver.version.
 mockserver = "7.5.0"
