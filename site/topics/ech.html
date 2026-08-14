@@ -96,6 +96,60 @@
     <code>DnsOverHttps.Builder.includeServiceMetadata</code>, and no release has it: 5.4.0 resolves
     A and AAAA records only, so there is no <code>HTTPS</code> record to carry a config list at all.
   </p>
+  <p>
+    The same emulator also runs <code>PublicEncryptedClientHelloTest</code>, which is the JVM
+    suite's cases against <code>tls-ech.dev</code>, <code>defo.ie</code> and
+    <code>cloudflare-ech.com</code>. The fixture suite says whether the client is right; this one
+    makes the JVM and Android rows of the status page comparable, since they are then the same
+    assertions against the same servers with only the TLS stack differing. It reports rather than
+    gates, for the reason everything calling those servers does.
+  </p>
+
+  <h2>What it would take on the JVM</h2>
+  <p>
+    <code>network:echTest</code> runs the same cases against the public servers on a JVM, and its
+    route assertions pass while its assertions about what the server saw fail. That is a true
+    result and a slightly misleading one: it reads as "OkHttp cannot do ECH on the JVM", where the
+    accurate version is that three separate things are in the way and only one of them is OkHttp's.
+  </p>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>What</th><th>Where</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>A TLS stack that can encrypt a client hello</td>
+          <td>Conscrypt <code>google3-export</code></td>
+          <td>Exists, unpublished. Built and cached by this repository.</td>
+        </tr>
+        <tr>
+          <td>Handing the config list to that stack</td>
+          <td>OkHttp <code>ConscryptPlatform.configureTlsExtensions</code></td>
+          <td>Takes an <code>echConfigList</code> and ignores it. One call, next to the ALPN one.</td>
+        </tr>
+        <tr>
+          <td>Reading a server's retry config back</td>
+          <td>Conscrypt OpenJDK <code>Platform</code></td>
+          <td>Discards the retry configs and the public name. A Conscrypt change, not an OkHttp one.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    <code>network:echConscryptTest</code> supplies the first and leaves the rest to OkHttp, so the
+    gap between it and <code>echTest</code> is the second row and nothing else. Under it,
+    <code>EchClientHelloTest</code> reads the client hello off a local socket that answers nothing
+    and asserts the name is not in the bytes — no DNS, no server, no network — which makes it the
+    one ECH result that is never about somebody else's uptime.
+  </p>
+  <p>
+    The third row is why <code>stale.tls-ech.dev</code> has no JVM counterpart. On Android a
+    rejected config arrives as an <code>EchConfigMismatchException</code> carrying the config the
+    server offered instead; on OpenJDK the same path throws the retry configs away, and nothing
+    public exposes them. A stale config can be detected there and not recovered from, whatever
+    OkHttp does.
+  </p>
 
   <h2>Specifications</h2>
   <div class="table-scroll">

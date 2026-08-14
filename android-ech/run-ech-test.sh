@@ -92,9 +92,76 @@ adb reverse tcp:8053 "tcp:$doh_host_port"
 adb reverse tcp:443 "tcp:$target_host_port"
 adb reverse tcp:8443 "tcp:$target_host_port"
 
-"$repository_root/gradlew" -p "$repository_root" :android-ech:connectedDebugAndroidTest \
-  "${gradle_arguments[@]}" \
-  -Pandroid.testInstrumentationRunnerArguments.class=okhttp.testbed.android.ech.EncryptedClientHelloTest \
+# One instrumentation run per suite, because the two report differently and Gradle writes both
+# to the same place. `results_dir` is moved aside after each run so the workflow can upload them
+# together; without that the second run would overwrite the first.
+results_dir="$repository_root/android-ech/build/outputs/androidTest-results/connected"
+
+run_suite() {
+  local class="$1"
+  shift
+  local status=0
+
+  rm -rf "$results_dir"
+  # `|| status=$?` rather than a bare call: this runs under `set -e`, and a failing suite whose
+  # results were never moved aside is a failing suite nobody can read.
+  "$repository_root/gradlew" -p "$repository_root" :android-ech:connectedDebugAndroidTest \
+    "${gradle_arguments[@]}" \
+    -Pandroid.testInstrumentationRunnerArguments.class="okhttp.testbed.android.ech.$class" \
+    "$@" || status=$?
+
+  # A run that produced no results at all didn't fail its assertions — it never got as far as
+  # running them. The way that happens here is an APK install against an emulator whose package
+  # service is still coming up, which answers `Broken pipe` and leaves Gradle reporting zero
+  # tests. Retried once, because a suite that reported nothing is worse than a slow job: it
+  # looks like a pass on the status page and is not one.
+  if [ "$status" -ne 0 ] && [ ! -d "$results_dir" ]; then
+    echo "$class produced no results; retrying once." >&2
+    status=0
+    "$repository_root/gradlew" -p "$repository_root" :android-ech:connectedDebugAndroidTest \
+      "${gradle_arguments[@]}" \
+      -Pandroid.testInstrumentationRunnerArguments.class="okhttp.testbed.android.ech.$class" \
+      "$@" || status=$?
+  fi
+
+  if [ -d "$results_dir" ]; then
+    rm -rf "$results_dir-$class"
+    mv "$results_dir" "$results_dir-$class"
+  fi
+  return $status
+}
+
+# The emulator reports itself booted before its package service will accept an install, and the
+# first `connectedDebugAndroidTest` of a run is what meets that. Waiting for `pm` to answer is
+# the check that matches the failure — `sys.boot_completed` on its own is already true when the
+# install fails. Best effort: on a machine where this can't be asked, the retry above still
+# covers it.
+wait_for_package_service() {
+  adb wait-for-device || return 0
+  for _ in $(seq 1 90); do
+    if adb shell pm path android >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "Timed out waiting for the device's package service; running anyway." >&2
+}
+
+wait_for_package_service
+
+# The public servers first, and not allowed to fail the run. tls-ech.dev, defo.ie and
+# cloudflare-ech.com belong to other people; an outage there is not a result about OkHttp, and
+# the JVM `network` suites treat the same servers the same way. The XML still records what
+# happened, which is what the status page reads.
+public_status=0
+run_suite PublicEncryptedClientHelloTest || public_status=$?
+if [ "$public_status" -ne 0 ]; then
+  echo "PublicEncryptedClientHelloTest failed; recorded, not fatal." >&2
+fi
+
+# The fixture suite does gate: it runs against containers this repository starts, so a failure
+# is about OkHttp or about this repository, and there is nobody else to blame for it.
+run_suite EncryptedClientHelloTest \
   -Pandroid.testInstrumentationRunnerArguments.ech=true \
   -Pandroid.testInstrumentationRunnerArguments.dohPort=8053 \
   -Pandroid.testInstrumentationRunnerArguments.caCertificate="$ca_certificate"

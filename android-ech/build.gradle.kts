@@ -55,6 +55,12 @@ dependencies {
   androidTestImplementation("com.squareup.okhttp3:okhttp:$okhttpVersion")
   androidTestImplementation("com.squareup.okhttp3:okhttp-dnsoverhttps:$okhttpVersion")
 
+  // Not optional, despite nothing here naming it. On Android the public suffix list is read
+  // from `assets/PublicSuffixDatabase.list`, which only this artifact ships; without it every
+  // `DnsOverHttps` query throws from `isPrivateHost` before a connection is attempted, and the
+  // whole suite fails on something that has nothing to do with ECH.
+  androidTestImplementation("com.squareup.okhttp3:okhttp-android:$okhttpVersion")
+
   androidTestImplementation(libs.assertk)
   androidTestImplementation(libs.junit.jupiter.api)
   androidTestImplementation(libs.junit5android.core)

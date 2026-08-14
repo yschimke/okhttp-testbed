@@ -16,7 +16,7 @@ Suites
 |---------------|-----------------------------|---------------------------------------------------------------------|
 | `containers`  | Docker                      | SOCKS5 and HTTP proxies, TLS via MockServer, HTTP semantics via go-httpbin, virtual threads (Loom) |
 | `network`     | Outbound network            | ALPN and SNI overrides, Let's Encrypt trust, ECH on the public servers |
-| `android-ech` | Docker, an API 37 emulator  | Encrypted Client Hello over DoH: accepted, retried, and declined     |
+| `android-ech` | Docker, an API 37 emulator  | Encrypted Client Hello over DoH: accepted, retried, and declined, plus the public servers |
 
 The `network` suites call servers other people operate — Google, Cloudflare, Let's Encrypt,
 and the ECH test servers at `tls-ech.dev` and `defo.ie`. They came from OkHttp's
@@ -120,10 +120,11 @@ Requires Docker and JDK 21+.
 ```
 ./gradlew containers:test containers:loomTest
 ./gradlew network:networkTest network:echTest
+./gradlew network:echConscryptTest   # after conscrypt/fetch-conscrypt.sh; see ECH on the JVM
 ```
 
-`test` covers the gating suites and fails the build. `loomTest`, `networkTest` and `echTest`
-all run with `ignoreFailures`, because what they report is not this repository being broken —
+`test` covers the gating suites and fails the build. `loomTest`, `networkTest`, `echTest` and
+`echConscryptTest` all run with `ignoreFailures`, because what they report is not this repository being broken —
 see [Suites that report rather than gate](#suites-that-report-rather-than-gate). `network`
 has no gating task at all: its `test` task is disabled, so those two are the only way to run
 it.
@@ -218,14 +219,52 @@ A and AAAA records only, so there is no HTTPS record to carry an ECH config list
 at whatever you like with `-PokhttpVersion`, and drop `ech-okhttp` once a release ships the
 API.
 
+`android-ech` also runs `PublicEncryptedClientHelloTest`, which is `EchTest`'s cases against
+the same public servers the JVM suite calls — `tls-ech.dev`, `defo.ie`, `cloudflare-ech.com`.
+It is there so the public-server results can be read across platforms: the JVM row of the
+status page and the Android row are then the same assertions against the same servers, and
+the only variable left between them is the TLS stack. It runs first, and its failures do not
+fail the job, for the same reason nothing in `network` gates — those servers belong to other
+people. The fixture suite that follows it does gate.
+
 ECH is Android-only in OkHttp today: JVM platforms accept the config list and ignore it. The
 `network` suite is where that shows up, from the other direction — `EchTest` came from
 OkHttp's `android-test` with its assertions intact, so on the JVM the route assertions pass,
 the assertions about what the server saw fail, and the difference is recorded rather than
 fixed up. See [Suites that report rather than gate](#suites-that-report-rather-than-gate).
-The two ECH suites are not duplicates: `android-ech` proves the client behaviour against a
-fixture nobody else can change, and `network` is what notices when `tls-ech.dev` or `defo.ie`
-does change.
+The ECH suites are not duplicates: `android-ech` proves the client behaviour against a
+fixture nobody else can change, `network` is what notices when `tls-ech.dev` or `defo.ie`
+does change, and `echConscryptTest` below is what says *why* the JVM ones are red.
+
+ECH on the JVM
+--------------
+
+`network:echTest` cannot pass on the JVM, and it is worth being precise about what is
+missing, because it is less than it looks.
+
+There is no published TLS stack a JVM can load that will encrypt a client hello. Conscrypt's
+`google3-export` branch has one — `Conscrypt.setEchConfigList(SSLSocket, byte[])` is public
+API there and in no release. `conscrypt/` builds that branch and caches the result as a
+release on this repository, and `network:echConscryptTest` runs the ECH cases against it:
+
+```
+conscrypt/fetch-conscrypt.sh
+./gradlew network:echConscryptTest -PokhttpVersion=5.5.0-SNAPSHOT
+```
+
+Two suites run under that task. `EchClientHelloTest` reads the bytes of the client hello
+against a local socket that accepts a connection and says nothing — no DNS, no internet, no
+server — and asserts that the name is not in them. `EchConscryptTest` is `EchTest`'s cases
+against the public servers, with the two things the JVM lacks supplied from outside OkHttp:
+this Conscrypt, and a network security policy saying ECH is allowed. When those pass and
+`echTest` doesn't, the difference between them is one call OkHttp's `ConscryptPlatform`
+doesn't make. It is not a claim that OkHttp does ECH on the JVM — the suite makes that call
+itself, from a socket factory, precisely because OkHttp doesn't.
+
+The whole arrangement is temporary and `conscrypt/` should be deleted the day Conscrypt ships
+ECH. [`conscrypt/README.md`](conscrypt/README.md) has the detail: what is missing where, why
+the build is cached as a release rather than run per commit, and why the stale-config retry
+case has no counterpart on the JVM at all.
 
 That suite is also the one place a version matters to compilation. `Route.echConfigList` and
 `DnsOverHttps.Builder.includeServiceMetadata` arrived after 5.4.0, so

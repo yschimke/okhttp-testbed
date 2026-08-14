@@ -58,6 +58,13 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
 
+      # Without this the Conscrypt suites are left out of the source set and a change that
+      # breaks them compiles clean. Failure is not fatal here: a pull request that bumps the
+      # pin has no release to fetch yet, and the conscrypt workflow is what builds that one.
+      - name: Fetch Conscrypt
+        continue-on-error: true
+        run: conscrypt/fetch-conscrypt.sh
+
       - name: Compile Network Suites
         run: ./gradlew network:compileTestKotlin network:checkPublicApiOnly
 
@@ -95,13 +102,21 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
 
+      # The ECH suites' other half: a Conscrypt that can encrypt a client hello, which is not
+      # published anywhere. Downloaded rather than built — the build is its own workflow, and
+      # this one runs daily. A missing release leaves echConscryptTest out of the build and
+      # the rest of the run unaffected, which is why this doesn't fail the job.
+      - name: Fetch Conscrypt
+        continue-on-error: true
+        run: conscrypt/fetch-conscrypt.sh
+
       - name: Run Network Tests
-        # Neither task gates — both carry ignoreFailures, because everything here calls a
+        # No task here gates — all of them carry ignoreFailures, because everything here calls a
         # server someone else operates. --continue still earns its place: it covers the
         # failures that happen before a test runs, so one suite failing to compile or to
-        # resolve doesn't rob the other of a result.
+        # resolve doesn't rob the others of a result.
         run: >
-          ./gradlew network:networkTest network:echTest --continue
+          ./gradlew network:networkTest network:echTest network:echConscryptTest --continue
           ${{ matrix.okhttpVersion && format('-PokhttpVersion={0}', matrix.okhttpVersion) || '' }}
 
       # What the XML can't say: which OkHttp version 'pinned' actually resolved to, and
