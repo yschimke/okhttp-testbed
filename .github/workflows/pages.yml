@@ -56,9 +56,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # enablement creates the Pages site on the first run rather than requiring someone to
+      # turn it on by hand: without it every build fails at this step with "Get Pages site
+      # failed", and nothing is ever deployed. It is a no-op once the site exists.
       - name: Configure Pages
         id: pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       # Each test workflow's most recent completed run on main, downloaded into one
       # directory. The runs are independent and finish hours apart, so the page is always
