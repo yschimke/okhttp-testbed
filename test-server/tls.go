@@ -35,6 +35,12 @@ type certificates struct {
 	// minting them needs the fixture CA's signing key, which a deployment holding a real
 	// certificate does not have.
 	badChains []badChain
+
+	// A client identity this CA has signed, served at /client.pem for a test to present, and
+	// the pool the mTLS listener verifies against. Both empty when a certificate was supplied:
+	// there is no signing key to mint a client certificate with, so that listener is not run.
+	clientPEM []byte
+	clientCAs *x509.CertPool
 }
 
 func loadCertificates() (*certificates, error) {
@@ -64,12 +70,20 @@ func loadCertificates() (*certificates, error) {
 	if err != nil {
 		return nil, err
 	}
+	clientPEM, err := newClientIdentity(caCert, caKey)
+	if err != nil {
+		return nil, err
+	}
+	clientCAs := x509.NewCertPool()
+	clientCAs.AddCert(caCert)
 	return &certificates{
 		leaf:      leaf,
 		caPEM:     caPEM,
 		selfMade:  true,
 		hosts:     hosts,
 		badChains: badChains,
+		clientPEM: clientPEM,
+		clientCAs: clientCAs,
 	}, nil
 }
 
@@ -184,6 +198,45 @@ func newLeafWith(caCert *x509.Certificate, caKey *ecdsa.PrivateKey, opts leafOpt
 	)
 }
 
+// A client certificate this CA has signed, as PEM: the certificate then its key.
+//
+// Served rather than pinned for the same reason the CA is: the CA is minted per process, so a
+// client identity written into the repository could not be signed by it. A test fetches this
+// over the plain port, hands it to okhttp-tls, and presents it to the mTLS listener.
+//
+// It carries clientAuth extended key usage and no SANs. A leaf with serverAuth would still work
+// today — Go does not check EKU on client certificates by default — but a certificate that says
+// what it is for keeps the fixture honest about what it is demonstrating.
+func newClientIdentity(caCert *x509.Certificate, caKey *ecdsa.PrivateKey) ([]byte, error) {
+	key, err := newKey()
+	if err != nil {
+		return nil, err
+	}
+	template := &x509.Certificate{
+		SerialNumber: serialNumber(),
+		Subject:      pkix.Name{CommonName: "okhttp-testbed client"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().AddDate(1, 0, 0),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, caCert, &key.PublicKey, caKey)
+	if err != nil {
+		return nil, err
+	}
+	// PKCS#8 rather than SEC1, because okhttp-tls's `HeldCertificate.decode` reads
+	// `BEGIN PRIVATE KEY` and not `BEGIN EC PRIVATE KEY`. The server-side leaves stay SEC1:
+	// Go's own X509KeyPair reads both, and this is the only key a client of this fixture parses.
+	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return nil, err
+	}
+	return append(
+		pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),
+		pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})...,
+	), nil
+}
+
 func serialNumber() *big.Int {
 	limit := new(big.Int).Lsh(big.NewInt(1), 128)
 	serial, err := rand.Int(rand.Reader, limit)
@@ -218,6 +271,18 @@ func perVersionListeners() []versionListener {
 
 func (s *server) tlsServer(addr string, versions tlsVersions, http2 bool) *http.Server {
 	return s.tlsServerWith(addr, versions, http2, s.certs.leaf)
+}
+
+// The same server, but a client certificate is required rather than merely welcome.
+//
+// This is the one listener where omitting a client certificate has to *fail*, which is what
+// makes the mutual-TLS assertions possible: everywhere else `RequestClientCert` means a client
+// with no certificate is served anyway, and a test could not tell "presented" from "ignored".
+func (s *server) mtlsServer(addr string) *http.Server {
+	srv := s.tlsServerWith(addr, tlsVersions{}, false, s.certs.leaf)
+	srv.TLSConfig.ClientAuth = tls.RequireAndVerifyClientCert
+	srv.TLSConfig.ClientCAs = s.certs.clientCAs
+	return srv
 }
 
 // The same server presenting a certificate of the caller's choosing, which is how the

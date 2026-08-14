@@ -340,6 +340,29 @@ deliberately does not assert is *who* refuses TLS 1.0: modern JDKs disable it th
 server rejecting an offer that was too new — measured, and true even of `COMPATIBLE_TLS`, which
 permits the old versions.
 
+Client certificates
+-------------------
+
+`ClientCertificateTest` runs against a listener that *requires* one. That distinction is the whole
+suite: `test-server`'s other TLS listeners request a certificate and serve a client that has none,
+so "presented" and "ignored" are indistinguishable there. The `mtls` listener verifies against the
+fixture CA and `/client.pem` serves an identity it signed — fetched at run time, because the CA is
+minted per container and anything committed here could not have been signed by it.
+
+The case worth knowing about is the last one. A certificate from a CA the server does not accept
+behaves *exactly* like having none: the server advertises which issuers it will take, the JDK's key
+manager finds no match among its identities, and sends nothing. So the server reports a missing
+certificate rather than an untrusted one, and the client's own logs agree with it. Anyone debugging
+"I configured a certificate and the server says I did not" is meeting this, and the test asserts
+the sameness rather than wishing it were otherwise.
+
+`PublicClientCertificateTest` is the reality check against `client.badssl.com`, which requests
+rather than requires and answers `400` when nothing arrives — worth knowing, because it means a
+missing client certificate can reach an application as an HTTP status rather than as a TLS error.
+It loads badssl's published PKCS#12 through a `KeyStore` and a `KeyManagerFactory` rather than
+`okhttp-tls`: `HandshakeCertificates` has no route in from a PKCS#12, and converting it first
+would mean testing the conversion.
+
 The resolver matrix
 -------------------
 

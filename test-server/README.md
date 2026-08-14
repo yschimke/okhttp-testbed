@@ -25,6 +25,11 @@ It covers three things nothing else here does:
   sixteen mystery hex codes, and `encryptedClientHelloOffered` calls out extension `0xfe0d`
   specifically: a client with no ECH configuration is meant to send one anyway, so that
   using ECH and not using it look alike, and whether it was real is deliberately invisible.
+- **A client certificate to present.** The `mtls` listener requires one, verified against the
+  fixture CA, and `/client.pem` serves an identity that CA has signed. Every other TLS listener
+  merely *requests* a certificate, which is right for reporting what a client offered and useless
+  for testing that it offered anything — a client with none is served just the same. Both are
+  absent when a real certificate was supplied: there is no signing key to have issued them with.
 - **Responses that are wrong on purpose.** `/hostile/…` hijacks the connection and writes
   resets, truncated bodies and invalid framing directly. `http.ResponseWriter` exists to
   stop a handler emitting nonsense, so nothing above the socket can produce these.
@@ -67,6 +72,7 @@ Listeners
 | `tls11` | `:8411` | TLS 1.1 only, obsolete suites, `http/1.1`                         |
 | `tls12` | `:8412` | TLS 1.2 only, `http/1.1`                                          |
 | `tls13` | `:8413` | TLS 1.3 only, `http/1.1`                                          |
+| `mtls`  | `:8425` | Requires a client certificate signed by the fixture CA            |
 | `badchain-expired` | `:8420` | A leaf that expired yesterday                            |
 | `badchain-wrong-host` | `:8421` | A valid chain for a name it is not served on          |
 | `badchain-self-signed` | `:8422` | A leaf that is its own issuer                        |
@@ -122,6 +128,7 @@ Endpoints
 | `/health` | liveness |
 | `/info` | listeners, certificate mode, and the URL this request arrived as |
 | `/ca.pem` | the generated CA, when the server minted its own certificate |
+| `/client.pem` | a client certificate and key that CA signed, for the `mtls` listener |
 | `/tls` | the negotiated handshake and the ClientHello it was chosen from |
 | `/anything`, `/anything/{path...}` | the whole request echoed back as JSON, any method |
 | `/headers` | request headers as `net/http` parsed them |

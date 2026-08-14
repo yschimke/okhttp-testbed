@@ -130,6 +130,15 @@ enum class Endpoint(
     probe = Probe.SystemDns("revoked.badssl.com"),
   ),
 
+  // Asks for a client certificate the way a real deployment does, and publishes the identity to
+  // present. Probed by name rather than over HTTPS: a plain GET answers 400 by design, which the
+  // Https probe would read as reachable anyway, but the name resolving is the honest question.
+  BADSSL_CLIENT(
+    server = "client.badssl.com",
+    operator = "badssl.com",
+    probe = Probe.SystemDns("client.badssl.com"),
+  ),
+
   BADSSL_PINNING(
     server = "pinning-test.badssl.com",
     operator = "badssl.com",

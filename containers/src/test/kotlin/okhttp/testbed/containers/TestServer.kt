@@ -51,6 +51,16 @@ object TestServer {
   const val TLS12_PORT = 8412
   const val TLS13_PORT = 8413
 
+  /**
+   * Mutual TLS: a client certificate is required here and merely welcome everywhere else.
+   *
+   * The distinction is what makes the assertions possible. `RequestClientCert` on the other
+   * listeners means a client with no certificate is served anyway, so "presented" and "ignored"
+   * are indistinguishable; this one refuses, and `/client.pem` is where a test gets an identity
+   * the fixture CA has signed.
+   */
+  const val MTLS_PORT = 8425
+
   /** A port per chain a client must refuse. */
   const val EXPIRED_PORT = 8420
   const val WRONG_HOST_PORT = 8421
@@ -76,6 +86,7 @@ object TestServer {
       TLS11_PORT,
       TLS12_PORT,
       TLS13_PORT,
+      MTLS_PORT,
       EXPIRED_PORT,
       WRONG_HOST_PORT,
       SELF_SIGNED_PORT,
