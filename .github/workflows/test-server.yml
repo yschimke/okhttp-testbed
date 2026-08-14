@@ -42,7 +42,11 @@ jobs:
       - name: Configure Go
         uses: actions/setup-go@v7.0.0
         with:
-          go-version: '1.24.13'
+          # Read from go.mod rather than pinned here. The directive is the floor the
+          # module actually declares, and GOTOOLCHAIN is local on the runner, so a
+          # version written down twice is a version that can be raised in one place and
+          # fail the build from the other.
+          go-version-file: test-server/go.mod
           cache-dependency-path: test-server/go.mod
 
       - name: Vet and Test
