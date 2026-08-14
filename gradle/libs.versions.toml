@@ -7,7 +7,7 @@ junit-platform = "1.14.4"
 kotlin = "2.2.21"
 # Must match the mockserver/mockserver image tag; the client refuses to talk to a
 # server whose major.minor differs. Injected into the tests as mockserver.version.
-mockserver = "7.4.0"
+mockserver = "7.5.0"
 # The go-httpbin container tag, for the `containers` suite and for test-server's compose
 # stack alike. Injected into the tests as gohttpbin.version, and checked against the compose
 # file by checkImagePins, so the deployment and the suite cannot drift apart.
