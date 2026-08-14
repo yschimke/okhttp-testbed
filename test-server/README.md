@@ -60,11 +60,45 @@ Listeners
 | `tls11` | `:8411` | TLS 1.1 only, obsolete suites, `http/1.1`                         |
 | `tls12` | `:8412` | TLS 1.2 only, `http/1.1`                                          |
 | `tls13` | `:8413` | TLS 1.3 only, `http/1.1`                                          |
+| `badchain-expired` | `:8420` | A leaf that expired yesterday                            |
+| `badchain-wrong-host` | `:8421` | A valid chain for a name it is not served on          |
+| `badchain-self-signed` | `:8422` | A leaf that is its own issuer                        |
+| `badchain-untrusted-root` | `:8423` | Signed by a CA that is never published            |
+| `badchain-incomplete-chain` | `:8424` | Signed by an intermediate that is withheld      |
 
 A port per TLS version is how badssl.com does it, and it is what lets a `ConnectionSpec`
 test point at a server that will negotiate one version and refuse the rest. The per-version
 listeners offer `http/1.1` alone: `h2` requires TLS 1.2 or better, so offering it would make
 those listeners differ from the main one in two ways rather than one.
+
+Chains that must be rejected
+----------------------------
+
+The `badchain-*` listeners are the local half of the badssl matrix, and they exist because
+badssl.com cannot be relied on for it. It is best-effort by its own description, several of
+its variants are ordinary certificates in the test set, its weak-crypto ports were deleted in
+June 2026 — and its `expired` certificate is signed a day at a time, so for the first
+twenty-four hours after generation it is not expired at all and a test asserting rejection
+passes for the wrong reason. Minting the chains here makes the validity window exact.
+
+Each listener differs from `https` in **exactly one way**, which is what makes a refusal
+informative: a client that refuses `badchain-expired` and accepts `https` has told us
+something specific, where a certificate wrong in three ways at once would only say it was
+wrong. All five are served on the same names as the good leaf, so the certificate is the
+only variable.
+
+`badchain-incomplete-chain` is the one that needs care. Its leaf is signed by an intermediate
+the server holds back, so the path cannot be built — but the leaf itself is perfectly good,
+and a client that already holds the intermediate will accept it. `TestIncompleteChainVerifiesOnceCompleted` asserts exactly that: the same certificate fails against the CA alone and
+succeeds once the withheld intermediate is supplied. Without that, a chain that was simply
+broken would look identical.
+
+Revocation is deliberately absent. A revoked certificate needs an OCSP responder or a CRL
+distribution point a client will actually fetch, which is different machinery — issue #16,
+not a fake bolted onto this.
+
+These listeners need the fixture CA's signing key, so they exist only when the server minted
+its own certificate. Under `TLS_CERT_FILE` there are none.
 
 The raw listener exists because `net/http` cannot answer the question it answers. Go
 canonicalises header names to `Title-Case` and keeps no record of their order, so `/anything`
@@ -131,6 +165,11 @@ turns that listener off.
 | `RAW_ADDR` | `:8081` | raw request-head echo |
 | `HTTPS_ADDR` | `:8443` | TLS, with `h2` |
 | `TLS10_ADDR` … `TLS13_ADDR` | `:8410` … `:8413` | one TLS version each |
+| `BADCHAIN_EXPIRED_ADDR` | `:8420` | the expired chain |
+| `BADCHAIN_WRONG_HOST_ADDR` | `:8421` | the wrong-host chain |
+| `BADCHAIN_SELF_SIGNED_ADDR` | `:8422` | the self-signed chain |
+| `BADCHAIN_UNTRUSTED_ROOT_ADDR` | `:8423` | the untrusted-root chain |
+| `BADCHAIN_INCOMPLETE_CHAIN_ADDR` | `:8424` | the incomplete chain |
 | `CERT_HOSTS` | — | extra names or IPs the generated leaf covers, comma-separated |
 | `TLS_CERT_FILE`, `TLS_KEY_FILE` | — | present a supplied certificate instead of a generated one |
 

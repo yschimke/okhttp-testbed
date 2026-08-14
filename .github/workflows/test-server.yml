@@ -67,6 +67,7 @@ jobs:
           docker run -d --name test-server \
             -p 18080:8080 -p 18081:8081 -p 18443:8443 \
             -p 18410:8410 -p 18411:8411 -p 18412:8412 -p 18413:8413 \
+            -p 18420:8420 -p 18421:8421 -p 18422:8422 -p 18423:8423 -p 18424:8424 \
             "$IMAGE:ci"
 
           for _ in $(seq 30); do
@@ -90,6 +91,17 @@ jobs:
           curl -fsS --cacert ca.pem --tlsv1.2 --tls-max 1.2 -o /dev/null https://127.0.0.1:18412/health
           curl -fsS --cacert ca.pem --tlsv1.3 -o /dev/null https://127.0.0.1:18413/health
           ! curl -fsS --cacert ca.pem --tls-max 1.2 -o /dev/null https://127.0.0.1:18413/health
+
+          echo '== every bad chain is refused by a client that trusts the fixture CA'
+          # `!` on each: curl must fail. A chain that verified here would mean the fixture is
+          # not testing what it claims, which is worse than it being unreachable.
+          for port in 18420 18421 18422 18423 18424; do
+            ! curl -fsS --cacert ca.pem -o /dev/null "https://127.0.0.1:$port/health" \
+              || { echo "chain on $port was accepted and must not be"; exit 1; }
+          done
+
+          echo '== and the good one still is, so the refusals above mean something'
+          curl -fsS --cacert ca.pem -o /dev/null https://127.0.0.1:18443/health
 
           echo '== the raw listener echoes the request head'
           printf 'GET /raw HTTP/1.1\r\nHost: x\r\nzZ-Odd-CASE: 1\r\n\r\n' \

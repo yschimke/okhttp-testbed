@@ -346,3 +346,122 @@ func TestPerVersionListenersPinTheirVersion(t *testing.T) {
 		})
 	}
 }
+
+// The local half of the badssl matrix. Every one of these must be refused by a client that
+// trusts the fixture CA — and refused for its own reason, not because the fixture is broken.
+//
+// The guard against that last risk is the good listener: the same client, the same trust
+// anchor, the same handler, succeeding over the ordinary certificate. A run where https also
+// failed would mean the test proved nothing.
+func TestBadChainsAreRejected(t *testing.T) {
+	s, plain := newTestServer(t)
+	if !s.certs.selfMade {
+		t.Skip("TLS_CERT_FILE is set; there are no fixture chains to mint")
+	}
+
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caPEMOf(t, plain)) {
+		t.Fatal("the fixture CA did not parse")
+	}
+	client := func(roots *x509.CertPool) *http.Client {
+		return &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{
+			RootCAs:    roots,
+			MinVersion: tls.VersionTLS12,
+		}}}
+	}
+
+	// The control: the good certificate, verified by the same client that is about to refuse
+	// everything else.
+	good := httptest.NewUnstartedServer(s.handler())
+	good.TLS = s.tlsServer("", tlsVersions{}, false).TLSConfig
+	good.StartTLS()
+	defer good.Close()
+
+	response, err := client(pool).Get(good.URL + "/tls")
+	if err != nil {
+		t.Fatalf("the good chain was refused, so this test can prove nothing: %v", err)
+	}
+	_ = response.Body.Close()
+
+	if len(s.certs.badChains) == 0 {
+		t.Fatal("no bad chains were minted")
+	}
+
+	for _, chain := range s.certs.badChains {
+		t.Run(chain.name, func(t *testing.T) {
+			server := httptest.NewUnstartedServer(s.handler())
+			server.TLS = s.tlsServerWith("", tlsVersions{}, false, chain.certificate).TLSConfig
+			server.StartTLS()
+			defer server.Close()
+
+			response, err := client(pool).Get(server.URL + "/tls")
+			if err == nil {
+				_ = response.Body.Close()
+				t.Fatalf("%s was accepted; it must be refused (%s)", chain.name, chain.why)
+			}
+
+			// Nothing here asserts on the message. Which error a client reports for a bad chain
+			// is the client's business — and reporting that difference is what the OkHttp suite
+			// pointed at this fixture is for.
+			t.Logf("%s refused: %v", chain.name, err)
+		})
+	}
+}
+
+// incomplete-chain has to fail for the reason it claims: the path is short, not the leaf bad.
+// Supplying the intermediate the server withholds must make the same certificate verify.
+func TestIncompleteChainVerifiesOnceCompleted(t *testing.T) {
+	s, plain := newTestServer(t)
+	if !s.certs.selfMade {
+		t.Skip("TLS_CERT_FILE is set; there are no fixture chains to mint")
+	}
+
+	var incomplete *badChain
+	for i := range s.certs.badChains {
+		if s.certs.badChains[i].name == "incomplete-chain" {
+			incomplete = &s.certs.badChains[i]
+		}
+	}
+	if incomplete == nil {
+		t.Fatal("no incomplete-chain fixture")
+	}
+	if len(incomplete.withheld) == 0 {
+		t.Fatal("incomplete-chain withholds nothing, so there is nothing for a client to supply")
+	}
+
+	server := httptest.NewUnstartedServer(s.handler())
+	server.TLS = s.tlsServerWith("", tlsVersions{}, false, incomplete.certificate).TLSConfig
+	server.StartTLS()
+	defer server.Close()
+
+	// The CA alone: the intermediate is missing, so no path can be built.
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caPEMOf(t, plain)) {
+		t.Fatal("the fixture CA did not parse")
+	}
+	client := func(roots *x509.CertPool) *http.Client {
+		return &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{
+			RootCAs:    roots,
+			MinVersion: tls.VersionTLS12,
+		}}}
+	}
+	if response, err := client(pool).Get(server.URL + "/tls"); err == nil {
+		_ = response.Body.Close()
+		t.Fatal("the incomplete chain verified without the intermediate")
+	}
+
+	// The CA and the withheld intermediate: the same leaf, now reachable.
+	completed := x509.NewCertPool()
+	if !completed.AppendCertsFromPEM(caPEMOf(t, plain)) {
+		t.Fatal("the fixture CA did not parse")
+	}
+	if !completed.AppendCertsFromPEM(incomplete.withheld) {
+		t.Fatal("the withheld intermediate did not parse")
+	}
+	response, err := client(completed).Get(server.URL + "/tls")
+	if err != nil {
+		t.Fatalf("the chain did not verify even with the intermediate supplied, "+
+			"so it is broken rather than incomplete: %v", err)
+	}
+	_ = response.Body.Close()
+}
