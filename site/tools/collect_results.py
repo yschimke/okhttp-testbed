@@ -20,6 +20,7 @@ rather than by JUnit — what it found reachable, and what its handshake offered
 
     <artifacts>/network-test-results-pinned/endpoints-networkTest.json
     <artifacts>/network-test-results-pinned/clienthello-networkTest.json
+    <artifacts>/network-test-results-pinned/doh-matrix-networkTest.json
 
 Output is two files:
 
@@ -329,6 +330,20 @@ def parse_client_hello(directory: pathlib.Path) -> dict | None:
     return None
 
 
+def parse_doh_matrix(directory: pathlib.Path) -> dict | None:
+    """Read what each DoH resolver said about each name, if the artifact carries it.
+
+    Same one-file-per-task rule and same first-readable-wins as the ClientHello record: the
+    resolvers answer the same way whichever task asked them.
+    """
+    for report in sorted(directory.glob("doh-matrix-*.json")):
+        try:
+            return json.loads(report.read_text())
+        except json.JSONDecodeError as e:
+            print(f"skipping unreadable {report}: {e}", file=sys.stderr)
+    return None
+
+
 def suite_status(suite: dict) -> str:
     if suite["failed"]:
         # Red for a suite that gates, and for one this repository is currently about. Amber for
@@ -400,6 +415,7 @@ def parse_artifact(directory: pathlib.Path) -> dict | None:
         "suites": suites,
         "endpoints": parse_endpoints(directory),
         "clientHello": parse_client_hello(directory),
+        "dohMatrix": parse_doh_matrix(directory),
     }
 
 
@@ -416,6 +432,7 @@ def group_by_version(artifacts: list[dict]) -> list[dict]:
                 "workflows": [],
                 "suites": [],
                 "clientHello": None,
+                "dohMatrix": None,
             },
         )
         if artifact["workflow"] not in version["workflows"]:
@@ -427,6 +444,10 @@ def group_by_version(artifacts: list[dict]) -> list[dict]:
         # meaningful next to the version that produced it.
         if artifact["clientHello"] and not version.get("clientHello"):
             version["clientHello"] = artifact["clientHello"]
+        # What the resolvers said is about the resolvers, but it is recorded per run, so it
+        # belongs to the version whose run recorded it rather than to the page as a whole.
+        if artifact["dohMatrix"] and not version.get("dohMatrix"):
+            version["dohMatrix"] = artifact["dohMatrix"]
 
     for version in versions.values():
         suites = version["suites"]

@@ -41,6 +41,7 @@ fun compareVersions(
 val echTestPattern = "EchTest"
 val echConscryptTestPattern = "EchConscryptTest"
 val echClientHelloTestPattern = "EchClientHelloTest"
+val serviceMetadataTestPattern = "DohServiceMetadataTest"
 
 // The Conscrypt built from `google3-export`, if someone has fetched or built it. It is not on
 // any repository — `Conscrypt.setEchConfigList` exists on that branch and in no release — so
@@ -68,6 +69,13 @@ sourceSets {
           "**/ConscryptEch.kt",
           "**/EchConscryptPlatform.kt",
         )
+      }
+
+      // `DnsOverHttps.Builder.includeServiceMetadata` and `Dns.Record` shipped in the same
+      // release as the ECH API, so this suite needs the version check but not the Conscrypt one:
+      // it asks what the resolver returned, which no TLS stack is involved in.
+      if (!supportsEch) {
+        exclude("**/$serviceMetadataTestPattern.kt")
       }
     }
   }
@@ -102,6 +110,12 @@ fun Test.reportEndpointsTo(task: String) {
   val clientHello = layout.buildDirectory.file("test-results/clienthello-$task.json")
   systemProperty("testbed.clienthello.report", clientHello.get().asFile.absolutePath)
   outputs.file(clientHello)
+
+  // What each DoH resolver said about each name. A record rather than a result, for the same
+  // reason and by the same one-file-per-task rule.
+  val dohMatrix = layout.buildDirectory.file("test-results/doh-matrix-$task.json")
+  systemProperty("testbed.doh.report", dohMatrix.get().asFile.absolutePath)
+  outputs.file(dohMatrix)
 }
 
 val networkTest =

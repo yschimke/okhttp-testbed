@@ -261,6 +261,33 @@ It calls the service once per scheduled run. The `network` workflow does not run
 requests, which is what makes that true rather than aspirational: How's My SSL asks to be used
 only for clients you control, and a daily request is that.
 
+The resolver matrix
+-------------------
+
+`okhttp-dnsoverhttps` is tested upstream against recorded responses. What that cannot cover is
+live resolvers *disagreeing*, and they do: Quad9 and AdGuard filter, by design and by different
+rules, so a name that answers at Cloudflare and not at Quad9 is a DNS policy result rather than a
+client bug. `DohMatrixTest` asks all four the same handful of names and writes down what came
+back, in `network/build/test-results/doh-matrix-<task>.json`, uploaded and rendered like the
+ClientHello record.
+
+Publishing the difference is the point, so almost nothing is asserted. Two names are: a control
+every resolver must resolve, and an RFC 2606 `.invalid` name none of them may. The rest — an ad
+domain, a name published to be classified as malicious, a name carrying an `HTTPS` record — are
+recorded, because failing a resolver for exercising its own policy would be publishing a
+preference as a defect.
+
+One outcome has its own name. A filtering resolver can *withhold* an answer, or it can answer
+`0.0.0.0`; the second arrives at a caller as a successful lookup that then fails to connect, which
+is much quieter than a resolution error, so it is recorded as `sinkholed` rather than `resolved`.
+A resolver the preflight found unreachable is `unavailable` and is never mistaken for one that
+said no.
+
+`DohServiceMetadataTest` asks the other half: what an `HTTPS` record carries, through `newCall`
+and `Dns.Record.ServiceMetadata`, since an ECH config list has nowhere else to come from. That
+API arrived in 5.5.0, so the suite is left out of the source set below it — the same version gate
+`EchTest` uses, without the Conscrypt half, because no TLS stack is involved in what DNS said.
+
 The ECH suite
 -------------
 
