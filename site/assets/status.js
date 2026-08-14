@@ -440,6 +440,55 @@ function renderDohMatrix(snapshot) {
   );
 }
 
+/*
+ * Which origins offer HTTP/3, and what OkHttp used instead.
+ *
+ * A record rather than a result: OkHttp has no HTTP/3, so "h2 at an origin advertising h3" is the
+ * correct outcome and an uninteresting assertion. The gap is the content — how much of the web is
+ * offering a protocol this client cannot take — and this is where it stops being a gap.
+ */
+function renderAltSvc(snapshot) {
+  const table = document.getElementById("alt-svc-table");
+  if (!table) return;
+
+  const recorded = snapshot.versions.find((v) => v.altSvc && v.altSvc.origins);
+  const origins = recorded ? Object.entries(recorded.altSvc.origins) : [];
+  if (!origins.length) {
+    table.replaceChildren(
+      el("tbody", {}, el("tr", {}, el("td", { textContent: "No HTTP/3 offers recorded in this run." }))),
+    );
+    return;
+  }
+
+  const rows = origins.map(([origin, row]) =>
+    el("tr", {}, [
+      el("td", { className: "mono", textContent: origin }),
+      el("td", {}, [
+        el("span", {
+          className: `pill ${row.advertisesH3 ? "finding" : "skipped"}`,
+          textContent: row.advertisesH3 ? "offers h3" : "no offer",
+        }),
+      ]),
+      el("td", { className: "mono", textContent: row.protocol }),
+      el("td", { className: "mono", textContent: row.altSvc || "—" }),
+    ]),
+  );
+
+  table.replaceChildren(
+    el(
+      "thead",
+      {},
+      el("tr", {}, [
+        el("th", { textContent: "Origin" }),
+        el("th", { textContent: "Alt-Svc" }),
+        el("th", { textContent: "OkHttp used" }),
+        el("th", { textContent: "Header" }),
+      ]),
+    ),
+    el("tbody", {}, rows),
+  );
+}
+
 function renderHistory(history) {
   const entries = history.runs || [];
   const okhttpVersions = [
@@ -568,6 +617,7 @@ async function loadJson(path) {
     renderEndpoints(snapshot);
     renderClientHello(snapshot);
     renderDohMatrix(snapshot);
+    renderAltSvc(snapshot);
   } catch (e) {
     document.getElementById("run-summary").replaceChildren(
       el("span", {}, [
@@ -585,6 +635,7 @@ async function loadJson(path) {
     renderEndpoints({ endpoints: [] });
     renderClientHello({ versions: [] });
     renderDohMatrix({ versions: [] });
+    renderAltSvc({ versions: [] });
   }
 
   try {

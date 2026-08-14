@@ -21,6 +21,7 @@ rather than by JUnit — what it found reachable, and what its handshake offered
     <artifacts>/network-test-results-pinned/endpoints-networkTest.json
     <artifacts>/network-test-results-pinned/clienthello-networkTest.json
     <artifacts>/network-test-results-pinned/doh-matrix-networkTest.json
+    <artifacts>/network-test-results-pinned/altsvc-networkTest.json
 
 Output is two files:
 
@@ -344,6 +345,19 @@ def parse_doh_matrix(directory: pathlib.Path) -> dict | None:
     return None
 
 
+def parse_alt_svc(directory: pathlib.Path) -> dict | None:
+    """Read which origins offered HTTP/3 and what OkHttp used instead, if recorded.
+
+    Same one-file-per-task rule and same first-readable-wins as the other records.
+    """
+    for report in sorted(directory.glob("altsvc-*.json")):
+        try:
+            return json.loads(report.read_text())
+        except json.JSONDecodeError as e:
+            print(f"skipping unreadable {report}: {e}", file=sys.stderr)
+    return None
+
+
 def suite_status(suite: dict) -> str:
     if suite["failed"]:
         # Red for a suite that gates, and for one this repository is currently about. Amber for
@@ -416,6 +430,7 @@ def parse_artifact(directory: pathlib.Path) -> dict | None:
         "endpoints": parse_endpoints(directory),
         "clientHello": parse_client_hello(directory),
         "dohMatrix": parse_doh_matrix(directory),
+        "altSvc": parse_alt_svc(directory),
     }
 
 
@@ -433,6 +448,7 @@ def group_by_version(artifacts: list[dict]) -> list[dict]:
                 "suites": [],
                 "clientHello": None,
                 "dohMatrix": None,
+                "altSvc": None,
             },
         )
         if artifact["workflow"] not in version["workflows"]:
@@ -448,6 +464,9 @@ def group_by_version(artifacts: list[dict]) -> list[dict]:
         # belongs to the version whose run recorded it rather than to the page as a whole.
         if artifact["dohMatrix"] and not version.get("dohMatrix"):
             version["dohMatrix"] = artifact["dohMatrix"]
+        # What the origin offered is the origin's, but what was negotiated is the version's.
+        if artifact["altSvc"] and not version.get("altSvc"):
+            version["altSvc"] = artifact["altSvc"]
 
     for version in versions.values():
         suites = version["suites"]

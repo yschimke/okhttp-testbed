@@ -120,6 +120,35 @@ enum class Endpoint(
 
   // Answers with the suites, groups and signature algorithms it was offered. It asks to be used
   // only for clients you control, which one request per scheduled run is.
+  // The HTTP/2 reference implementation, and an httpbin behind the same server — which is what
+  // makes the framing questions askable without a fixture: a body that needs several
+  // WINDOW_UPDATEs, and a header that needs real HPACK.
+  NGHTTP2(
+    server = "nghttp2.org",
+    operator = "the nghttp2 project",
+    probe = Probe.Https("https://nghttp2.org/httpbin/get"),
+  ),
+
+  // The origins that advertise HTTP/3 in Alt-Svc. OkHttp cannot take the offer, which is the
+  // point of testing them: the fallback is what users meet, and it is invisible until it breaks.
+  CLOUDFLARE_QUIC(
+    server = "cloudflare-quic.com",
+    operator = "Cloudflare",
+    probe = Probe.Https("https://cloudflare-quic.com/"),
+  ),
+
+  NGINX_QUIC(
+    server = "quic.nginx.org",
+    operator = "F5 NGINX",
+    probe = Probe.Https("https://quic.nginx.org/"),
+  ),
+
+  HTTP3_IS(
+    server = "http3.is",
+    operator = "the http3.is authors",
+    probe = Probe.Https("https://http3.is/"),
+  ),
+
   // Publishes a name per address family — v4 only, v6 only, and both — which is what makes
   // testing address racing possible without inventing the addresses.
   TEST_IPV6(

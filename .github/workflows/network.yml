@@ -205,5 +205,6 @@ jobs:
             network/build/test-results/endpoints-*.json
             network/build/test-results/clienthello-*.json
             network/build/test-results/doh-matrix-*.json
+            network/build/test-results/altsvc-*.json
             network/build/test-results/run-metadata.json
           retention-days: 30

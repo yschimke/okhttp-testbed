@@ -118,6 +118,11 @@ fun Test.reportEndpointsTo(task: String) {
   val dohMatrix = layout.buildDirectory.file("test-results/doh-matrix-$task.json")
   systemProperty("testbed.doh.report", dohMatrix.get().asFile.absolutePath)
   outputs.file(dohMatrix)
+
+  // Which origins offer HTTP/3, and what OkHttp used instead. Same rule again.
+  val altSvc = layout.buildDirectory.file("test-results/altsvc-$task.json")
+  systemProperty("testbed.altsvc.report", altSvc.get().asFile.absolutePath)
+  outputs.file(altSvc)
 }
 
 val networkTest =
