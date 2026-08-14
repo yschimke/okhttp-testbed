@@ -79,6 +79,15 @@ enum class Endpoint(
     probe = Probe.Https("https://tls-ech.dev/"),
   ),
 
+  // The public half of the hostile-response coverage. Its /error/* endpoints fail *before* a
+  // response head arrives, which the local fixture's /hostile/reset deliberately does not — so
+  // the two are complementary rather than duplicates.
+  TESTSERVER_HOST(
+    server = "testserver.host",
+    operator = "HTTP Toolkit",
+    probe = Probe.Https("https://testserver.host/status/200"),
+  ),
+
   DEFO_IE(
     server = "defo.ie",
     operator = "the DEfO project",

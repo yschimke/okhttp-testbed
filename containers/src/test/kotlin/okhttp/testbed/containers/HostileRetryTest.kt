@@ -60,12 +60,54 @@ class HostileRetryTest {
       }.build()
 
   @Test
-  fun postIsNotRetriedWhenTheConnectionIsReset() {
+  fun postIsNotRetriedAfterAMidResponseReset() {
+    sendAndCount("/hostile/reset", post = true)
+
+    assertThat(attempts.get(), name = "network attempts for one POST").isEqualTo(1)
+  }
+
+  /**
+   * The same reset against a `GET`.
+   *
+   * Retrying an idempotent request is usually defensible, but not here: `/hostile/reset` sends
+   * a status line, headers and part of a body before the RST, so a response head has already
+   * been received. Sending the request again at that point would be wrong whatever the method.
+   */
+  @Test
+  fun getIsNotRetriedAfterAMidResponseReset() {
+    sendAndCount("/hostile/reset", post = false)
+
+    assertThat(attempts.get(), name = "network attempts for one GET").isEqualTo(1)
+  }
+
+  /**
+   * The case where a retry is actually plausible, and the one that matters.
+   *
+   * `/hostile/no-response` accepts the connection, writes nothing at all and closes. No response
+   * head ever arrives, so a client cannot know whether the server processed the request — which
+   * is exactly the situation OkHttp's `retryOnConnectionFailure` exists for. Retrying an
+   * idempotent request here is reasonable; retrying a `POST` is how one payment becomes two.
+   *
+   * There is deliberately no `GET` counterpart. Retrying a `GET` here would be *correct*, so
+   * asserting a count for it would encode a preference as a regression, and a suite that goes
+   * amber for good behaviour teaches everyone to ignore the colour.
+   */
+  @Test
+  fun postIsNotRetriedWhenNoResponseArrives() {
+    sendAndCount("/hostile/no-response", post = true)
+
+    assertThat(attempts.get(), name = "network attempts for one POST with no response").isEqualTo(1)
+  }
+
+  private fun sendAndCount(
+    path: String,
+    post: Boolean,
+  ) {
     val request =
       Request
         .Builder()
-        .url(url("/hostile/reset"))
-        .post("payload".toRequestBody())
+        .url(url(path))
+        .apply { if (post) post("payload".toRequestBody()) }
         .build()
 
     try {
@@ -73,26 +115,6 @@ class HostileRetryTest {
     } catch (expected: IOException) {
       // The failure is the point of the endpoint; how often we got there is what is under test.
     }
-
-    assertThat(attempts.get(), name = "network attempts for one POST").isEqualTo(1)
-  }
-
-  /**
-   * The same reset against a `GET`, recorded for contrast.
-   *
-   * Retrying an idempotent request is defensible where retrying a `POST` is not, so the two
-   * numbers together say more than either alone: if they differ, OkHttp is distinguishing the
-   * methods, which is the behaviour you would want.
-   */
-  @Test
-  fun getMayBeRetriedWhenTheConnectionIsReset() {
-    try {
-      client.newCall(Request.Builder().url(url("/hostile/reset")).build()).execute().use { it.body.string() }
-    } catch (expected: IOException) {
-      // As above.
-    }
-
-    assertThat(attempts.get(), name = "network attempts for one GET").isEqualTo(1)
   }
 
   private fun url(path: String) = "http://${server.host}:${server.getMappedPort(TestServer.hostilePort)}$path".toHttpUrl()
