@@ -12,11 +12,13 @@
 const SUITES = [
   {
     suite: 'EchTest',
+    param: 'JDK',
     heading: 'OkHttp as shipped',
-    note: 'JVM, no Conscrypt',
+    note: 'JVM, Jdk9Platform',
   },
   {
-    suite: 'EchPlatformTest',
+    suite: 'EchTest',
+    param: 'CONSCRYPT_ECH',
     heading: 'OkHttp + the missing call',
     note: 'JVM, EchConscryptPlatform',
   },
@@ -90,8 +92,11 @@ const ROWS = [
   },
 ];
 
-// Android's runner appends the device to every case name.
-const bareName = (name) => name.replace(/\s*\[.*\]\s*$/, '');
+// EchTest is parameterised over the TLS stack, so its cases arrive as "<case> <PLATFORM>";
+// the other suites have a case per server and no parameter. Names are normalised upstream in
+// collect_results.py, so this only has to take the parameter back off.
+const caseKey = (column) => (name) =>
+  column.param ? (name.endsWith(` ${column.param}`) ? name.slice(0, -column.param.length - 1) : null) : name;
 
 const text = (el, value) => {
   el.textContent = value;
@@ -110,9 +115,10 @@ function findSuites(data) {
   return found;
 }
 
-function cellFor(entry, caseName) {
+function cellFor(entry, column, caseName) {
   if (!entry || !caseName) return null;
-  return (entry.suite.cases || []).find((c) => bareName(c.name) === caseName) || null;
+  const key = caseKey(column);
+  return (entry.suite.cases || []).find((c) => key(c.name) === caseName) || null;
 }
 
 function render(data, root) {
@@ -152,19 +158,25 @@ function render(data, root) {
 
     for (const column of columns) {
       const cell = tr.insertCell();
-      const result = cellFor(found.get(column.suite), row.cases[column.suite]);
+      const result = cellFor(found.get(column.suite), column, row.cases[column.suite]);
       if (!result) {
         text(cell, '—');
         cell.title = 'not covered by this suite';
         continue;
       }
       const pill = document.createElement('span');
-      // A failure here is a finding rather than breakage: every one of these calls a server
-      // somebody else runs, and the suites are the reporting kind. The page says so in words
-      // under the table rather than colouring a real failure green.
-      pill.className = `pill ${result.status === 'failed' ? 'finding' : result.status}`;
-      text(pill, result.status === 'failed' ? 'no' : result.status === 'passed' ? 'yes' : result.status);
-      if (result.message) pill.title = result.message;
+      // Three outcomes, not two. "expected" is a failure this repository predicted and can
+      // explain — it carries its reason in the tooltip; "no" is one nobody predicted, and is
+      // the only thing here worth chasing.
+      const label =
+        result.status === 'passed' ? 'yes'
+        : result.status === 'expected' ? 'expected'
+        : result.status === 'failed' ? 'no'
+        : result.status;
+      pill.className = `pill ${result.status === 'failed' ? 'failed' : result.status}`;
+      text(pill, label);
+      const why = result.expectedReason || result.message;
+      if (why) pill.title = why;
       cell.append(pill);
     }
   }

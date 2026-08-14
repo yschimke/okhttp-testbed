@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import re
 import sys
 import xml.etree.ElementTree as ElementTree
 
@@ -61,6 +62,76 @@ REPORTING_TASKS = {
 # else in the Android module runs against containers this repository starts.
 REPORTING_CLASSES = {"PublicEncryptedClientHelloTest"}
 
+# Failures that are the point rather than the problem.
+#
+# A suite here is asking a question whose answer is currently "no", and saying so is why it
+# exists — EchTest reports that OkHttp can't do ECH on the JVM, and a green EchTest would mean
+# the finding had been lost, not that the bug was fixed. Those failures are shown, and shown in
+# amber, but folded away: the page's red is reserved for a result nobody predicted.
+#
+# The reason is required, and is what the page shows instead of a stack trace. Cases are named
+# individually rather than by wildcard on purpose — a new case in one of these suites should
+# arrive as an unexpected failure and be looked at, not inherit an excuse written for its
+# neighbours.
+EXPECTED_FAILURES = {
+    "EchTest": {
+        f"{case} JDK": (
+            "OkHttp's ConscryptPlatform takes the ECH config list and drops it, and no released "
+            "Conscrypt has the method for it to call — so this cannot pass until a Conscrypt "
+            "after 2.7.0 ships and OkHttp can compile against it. EchPlatformTest runs the same "
+            "request with that one call added."
+        )
+        for case in (
+            "cloudflareUsesEch",
+            "echIsAcceptedOnTlsEchDev",
+            "echIsAcceptedOnDefoIe",
+            "echIsRetriedOnStaleTlsEchDev",
+            "tlsIsNotUsedOnTls12TlsEchDev",
+        )
+    }
+    | {
+        # The retry cases can't pass on either platform: falling back after a rejection needs
+        # SSL_get0_ech_retry_configs, which Conscrypt exposes on Android and discards on the JVM.
+        # Keyed separately from the JDK ones because the reason is a different one.
+        f"{case} CONSCRYPT_ECH": (
+            "Falling back after a server rejects ECH needs the retry configs read back, which "
+            "takes SSL_get0_ech_retry_configs. Conscrypt exposes that on Android and discards it "
+            "on the JVM, so no platform written here can fall back rather than fail."
+        )
+        for case in (
+            "echIsRetriedOnStaleTlsEchDev",
+            "tlsIsNotUsedOnTls12TlsEchDev",
+        )
+    },
+    "EchConscryptTest": {
+        "tls12IsReachedWithoutEch": (
+            "Falling back after a server rejects ECH needs the retry configs read back, which "
+            "takes SSL_get0_ech_retry_configs. Conscrypt exposes that on Android and discards it "
+            "on the JVM, so no client here can fall back rather than fail."
+        ),
+    },
+}
+
+
+def normalise_case(name: str) -> str:
+    """The case name with the machinery stripped off, for matching and for display.
+
+    Two dialects arrive here. A parameterised JVM case is `cloudflareUsesEch(TlsPlatform) JDK`,
+    where the parameter list is noise and the trailing argument is the thing that identifies it.
+    An Android case is `cloudflareUsesEch[emulator-5554 - 17]`, where the device is noise too —
+    the platform is already recorded per suite, and putting the emulator's serial number in a
+    test's name only makes two runs of the same test look like different tests.
+    """
+    name = re.sub(r"\[[^\]]*\]\s*$", "", name)
+    name = re.sub(r"\([^)]*\)", "", name)
+    return " ".join(name.split())
+
+
+def expected_reason(suite_name: str, case_name: str) -> str:
+    """Why this case failing is the expected answer, or empty if it isn't."""
+    return EXPECTED_FAILURES.get(suite_name, {}).get(case_name, "")
+
+
 # How many collections the history keeps. Enough for the trend strip to show a few weeks of
 # daily runs without the file growing without bound.
 HISTORY_LIMIT = 120
@@ -72,6 +143,8 @@ def parse_suite(path: pathlib.Path, task: str, workflow: str, run_url: str, plat
     # Gradle writes a single <testsuite> per file, but a <testsuites> wrapper is legal.
     if root.tag == "testsuites":
         root = root.find("testsuite") or root
+
+    simple_name = root.get("name", path.stem).rsplit(".", 1)[-1]
 
     cases = []
     for case in root.iter("testcase"):
@@ -93,9 +166,18 @@ def parse_suite(path: pathlib.Path, task: str, workflow: str, run_url: str, plat
             message = ""
             trace = ""
 
+        raw_name = case.get("name", "")
+        case_name = normalise_case(raw_name)
+        reason = expected_reason(simple_name, case_name) if status == "failed" else ""
+        if reason:
+            status = "expected"
+
         cases.append(
             {
-                "name": case.get("name", ""),
+                "name": case_name,
+                # Kept so a name on the page can still be found in the XML it came from.
+                "rawName": raw_name,
+                "expectedReason": reason,
                 "className": case.get("classname", ""),
                 "status": status,
                 "timeSeconds": float(case.get("time") or 0.0),
@@ -105,7 +187,6 @@ def parse_suite(path: pathlib.Path, task: str, workflow: str, run_url: str, plat
             }
         )
 
-    simple_name = root.get("name", path.stem).rsplit(".", 1)[-1]
     return {
         "name": simple_name,
         "className": root.get("name", ""),
@@ -118,7 +199,10 @@ def parse_suite(path: pathlib.Path, task: str, workflow: str, run_url: str, plat
         "reporting": task in REPORTING_TASKS or simple_name in REPORTING_CLASSES,
         "timeSeconds": float(root.get("time") or 0.0),
         "passed": sum(1 for c in cases if c["status"] == "passed"),
+        # `failed` stays the count of failures nobody predicted, so every existing reader — the
+        # roll-up, the history, the cards — keeps treating it as the number that matters.
         "failed": sum(1 for c in cases if c["status"] == "failed"),
+        "expected": sum(1 for c in cases if c["status"] == "expected"),
         "skipped": sum(1 for c in cases if c["status"] == "skipped"),
         "cases": sorted(cases, key=lambda c: c["name"]),
     }
@@ -199,6 +283,8 @@ def parse_client_hello(directory: pathlib.Path) -> dict | None:
 def suite_status(suite: dict) -> str:
     if suite["failed"]:
         return "finding" if suite["reporting"] else "failed"
+    if suite.get("expected"):
+        return "expected"
     if suite["passed"]:
         return "passed"
     return "skipped"
@@ -206,7 +292,7 @@ def suite_status(suite: dict) -> str:
 
 def roll_up(statuses: list[str]) -> str:
     """The worst status in a set, with findings ranked below outright failure."""
-    for candidate in ("failed", "finding", "passed", "skipped"):
+    for candidate in ("failed", "finding", "expected", "passed", "skipped"):
         if candidate in statuses:
             return candidate
     return "unknown"
@@ -293,6 +379,7 @@ def group_by_version(artifacts: list[dict]) -> list[dict]:
         version["status"] = roll_up([suite_status(s) for s in suites])
         version["passed"] = sum(s["passed"] for s in suites)
         version["failed"] = sum(s["failed"] for s in suites)
+        version["expected"] = sum(s["expected"] for s in suites)
         version["skipped"] = sum(s["skipped"] for s in suites)
         version["timeSeconds"] = round(sum(s["timeSeconds"] for s in suites), 1)
 
@@ -316,6 +403,7 @@ def summarise(snapshot: dict) -> dict:
                 "status": v["status"],
                 "passed": v["passed"],
                 "failed": v["failed"],
+                "expected": v["expected"],
                 "skipped": v["skipped"],
                 "suites": {s["name"]: suite_status(s) for s in v["suites"]},
             }
