@@ -86,6 +86,52 @@ if [[ "$mode" == "--smoke-only" ]]; then
   exit 0
 fi
 
+# Wait for the device to be ready to install a package, which is not the same thing as
+# booted.
+#
+# `sys.boot_completed` flips to 1 while the system services are still registering, and
+# `android-emulator-runner` hands the script the device at that point. Installing into that
+# window fails the run outright:
+#
+#   Failed to install split APK(s): android-ech-debug-androidTest.apk
+#   java.lang.IllegalStateException: Cannot access system provider: 'settings' before
+#   system providers are installed!
+#   [cmd: Can't find service: package]  →  Starting 0 tests on emulator-5554
+#
+# Zero tests run, so Gradle finds no results XML and fails reading it — which reads as the
+# ECH suite breaking rather than as the emulator not being up yet. So gate on the services
+# the install actually needs, not on the boot flag.
+wait_for_package_service() {
+  local deadline=$((SECONDS + ${ANDROID_READY_TIMEOUT_SECONDS:-300}))
+  local property
+
+  adb wait-for-device
+
+  while ((SECONDS < deadline)); do
+    property="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r\n')"
+    if [[ "$property" == "1" ]] &&
+      # `service check` asks the service manager whether the binder is registered. Both are
+      # named in the failure above: `package` performs the install, and the settings
+      # provider is what `install-create` reads before choosing a volume.
+      [[ "$(adb shell service check package 2>/dev/null | tr -d '\r\n')" == *"found"* ]] &&
+      [[ "$(adb shell service check settings 2>/dev/null | tr -d '\r\n')" == *"found"* ]] &&
+      # Registered is not the same as answering. One real call through the package manager
+      # is the only thing that proves the install path works.
+      adb shell pm path android >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+
+  echo "Timed out waiting for the emulator's package manager to come up" >&2
+  echo "sys.boot_completed=$(adb shell getprop sys.boot_completed 2>&1 | tr -d '\r\n')" >&2
+  echo "service check package: $(adb shell service check package 2>&1 | tr -d '\r\n')" >&2
+  echo "service check settings: $(adb shell service check settings 2>&1 | tr -d '\r\n')" >&2
+  return 1
+}
+
+wait_for_package_service
+
 # 8053 is the resolver. The origin is reached on 8443, the port the HTTPS record publishes,
 # and on 443 for the default the URL would otherwise use.
 adb reverse tcp:8053 "tcp:$doh_host_port"
