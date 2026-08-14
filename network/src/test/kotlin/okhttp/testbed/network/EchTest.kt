@@ -30,8 +30,10 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.Route
 import okhttp3.dnsoverhttps.DnsOverHttps
-import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assumptions.assumeTrue
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.EnumSource
 
 /**
  * Confirms Encrypted Client Hello (ECH) end to end, against the servers the IETF and DEfO
@@ -39,10 +41,19 @@ import org.junit.jupiter.api.Test
  *
  * ECH takes two halves. OkHttp supplies the first: an ECH config list read out of the DNS HTTPS
  * record, which is why this uses [DnsOverHttps] with service metadata rather than the system
- * resolver. The TLS stack supplies the second, and the JDK's cannot encrypt a client hello — so
- * on the JVM the route assertions pass and the assertions about what the server saw do not. That
- * is a finding about the platform, which is why this suite runs under `echTest` and records its
- * result instead of failing the build. See the README.
+ * resolver. The TLS stack supplies the second, and that is what varies here: every case runs
+ * twice, once on the platform OkHttp picks for itself and once on [EchConscryptPlatform].
+ *
+ * Parameterising rather than writing two suites is what makes the comparison trustworthy. The
+ * request, the resolver, the client and the assertions are one piece of code, so a difference
+ * between the two results cannot be a difference between two copies of a test that drifted — it
+ * is the platform, and the platforms differ by one call to `Conscrypt.setEchConfigList`.
+ *
+ * On [TlsPlatform.JDK] the route assertions pass and the assertions about what the server saw do
+ * not, and that is the finding this suite exists to report: it cannot change until a Conscrypt
+ * carrying the ECH API is released and OkHttp can compile against it. Those failures are marked
+ * expected on the status page. A failure on [TlsPlatform.CONSCRYPT_ECH] is not expected, and is
+ * the one worth waking up for.
  *
  * Ported from OkHttp's `android-test`, where it runs as a `Remote` test on API 37 and above. Two
  * of the cases there don't cross over: the `AndroidDns` variant, and the one covering a host
@@ -50,10 +61,36 @@ import org.junit.jupiter.api.Test
  */
 @RequiresEndpoint(Endpoint.CLOUDFLARE_DOH)
 class EchTest {
+  /** The TLS stack under test. */
+  enum class TlsPlatform {
+    /** Whatever OkHttp chooses unaided, which on a JVM is `Jdk9Platform`. */
+    JDK,
+
+    /** OkHttp's platform with the one call `ConscryptPlatform` omits. */
+    CONSCRYPT_ECH,
+  }
+
   private lateinit var client: OkHttpClient
 
-  @BeforeEach
-  fun setUp() {
+  /**
+   * Installs [platform] and builds a client on it.
+   *
+   * Called from the test rather than from a `@BeforeEach`, because which platform to install is
+   * the test's parameter and a `@BeforeEach` can't see it. The client has to be built afterwards
+   * either way: OkHttp reads the platform when it builds a socket factory, so one built earlier
+   * would quietly keep the old stack and the suite would compare a platform against itself.
+   */
+  private fun useClientOn(platform: TlsPlatform) {
+    when (platform) {
+      TlsPlatform.JDK -> EchConscryptPlatform.uninstall()
+      TlsPlatform.CONSCRYPT_ECH -> {
+        assumeTrue(ConscryptEch.isSupported) {
+          "requires a Conscrypt with ECH. Run conscrypt/fetch-conscrypt.sh."
+        }
+        EchConscryptPlatform.install()
+      }
+    }
+
     val bootstrapClient = OkHttpClient()
 
     // DNS server is addressed by IP, so resolving the resolver doesn't need a resolver.
@@ -73,9 +110,18 @@ class EchTest {
         .build()
   }
 
-  @Test
+  @AfterEach
+  fun tearDown() {
+    // The platform is process-wide, so leaving it installed would hand it to the next suite.
+    EchConscryptPlatform.uninstall()
+  }
+
+  @ParameterizedTest(name = "{displayName} {0}")
+  @EnumSource(TlsPlatform::class)
   @RequiresEndpoint(Endpoint.CLOUDFLARE_ECH)
-  fun cloudflareUsesEch() {
+  fun cloudflareUsesEch(platform: TlsPlatform) {
+    useClientOn(platform)
+
     val call = client.newCall(Request("https://cloudflare-ech.com/cdn-cgi/trace".toHttpUrl()))
     call.execute().use { response ->
       assertThat(call.routeList.routes.single().echConfigList).isNotNull()
@@ -85,9 +131,12 @@ class EchTest {
     }
   }
 
-  @Test
+  @ParameterizedTest(name = "{displayName} {0}")
+  @EnumSource(TlsPlatform::class)
   @RequiresEndpoint(Endpoint.TLS_ECH_DEV)
-  fun echIsAcceptedOnTlsEchDev() {
+  fun echIsAcceptedOnTlsEchDev(platform: TlsPlatform) {
+    useClientOn(platform)
+
     val call = client.newCall(Request("https://tls-ech.dev/".toHttpUrl()))
     call.execute().use { response ->
       assertThat(call.routeList.routes.single().echConfigList).isNotNull()
@@ -101,9 +150,12 @@ class EchTest {
     }
   }
 
-  @Test
+  @ParameterizedTest(name = "{displayName} {0}")
+  @EnumSource(TlsPlatform::class)
   @RequiresEndpoint(Endpoint.TLS_ECH_DEV)
-  fun echIsRetriedOnStaleTlsEchDev() {
+  fun echIsRetriedOnStaleTlsEchDev(platform: TlsPlatform) {
+    useClientOn(platform)
+
     val call = client.newCall(Request("https://stale.tls-ech.dev/".toHttpUrl()))
     call.execute().use { response ->
       val routes = call.routeList.routes
@@ -122,9 +174,12 @@ class EchTest {
    * This page redirects to 'https://wrong.tls-ech.dev:445/', but nothing is listening on that port
    * on that server.
    */
-  @Test
+  @ParameterizedTest(name = "{displayName} {0}")
+  @EnumSource(TlsPlatform::class)
   @RequiresEndpoint(Endpoint.TLS_ECH_DEV)
-  fun echIsAcceptedOnWrongTlsEchDev() {
+  fun echIsAcceptedOnWrongTlsEchDev(platform: TlsPlatform) {
+    useClientOn(platform)
+
     val verifiedHostnames = mutableListOf<String>()
     val hostnameVerifier = client.hostnameVerifier
     val client =
@@ -148,9 +203,12 @@ class EchTest {
   }
 
   /** TLS 1.2 cannot carry ECH. */
-  @Test
+  @ParameterizedTest(name = "{displayName} {0}")
+  @EnumSource(TlsPlatform::class)
   @RequiresEndpoint(Endpoint.TLS_ECH_DEV)
-  fun tlsIsNotUsedOnTls12TlsEchDev() {
+  fun tlsIsNotUsedOnTls12TlsEchDev(platform: TlsPlatform) {
+    useClientOn(platform)
+
     val call = client.newCall(Request("https://tls12.tls-ech.dev/".toHttpUrl()))
     call.execute().use { response ->
       val routes = call.routeList.routes
@@ -165,9 +223,12 @@ class EchTest {
     }
   }
 
-  @Test
+  @ParameterizedTest(name = "{displayName} {0}")
+  @EnumSource(TlsPlatform::class)
   @RequiresEndpoint(Endpoint.DEFO_IE)
-  fun echIsAcceptedOnDefoIe() {
+  fun echIsAcceptedOnDefoIe(platform: TlsPlatform) {
+    useClientOn(platform)
+
     val call = client.newCall(Request("https://defo.ie/ech-check.php".toHttpUrl()))
     call.execute().use { response ->
       assertThat(call.routeList.routes.single().echConfigList).isNotNull()

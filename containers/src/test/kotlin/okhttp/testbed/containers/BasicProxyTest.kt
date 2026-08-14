@@ -38,7 +38,7 @@ import org.mockserver.model.HttpRequest.request
 import org.mockserver.model.HttpResponse.response
 import org.mockserver.proxyconfiguration.ProxyConfiguration
 import org.mockserver.socket.tls.KeyStoreFactory
-import org.testcontainers.containers.MockServerContainer
+import org.testcontainers.mockserver.MockServerContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 

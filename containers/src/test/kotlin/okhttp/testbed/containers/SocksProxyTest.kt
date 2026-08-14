@@ -29,7 +29,7 @@ import org.mockserver.client.MockServerClient
 import org.mockserver.model.HttpRequest.request
 import org.mockserver.model.HttpResponse.response
 import org.testcontainers.containers.GenericContainer
-import org.testcontainers.containers.MockServerContainer
+import org.testcontainers.mockserver.MockServerContainer
 import org.testcontainers.containers.Network
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers

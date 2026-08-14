@@ -130,7 +130,7 @@ jobs:
         # failures that happen before a test runs, so one suite failing to compile or to
         # resolve doesn't rob the others of a result.
         run: >
-          ./gradlew network:networkTest network:echTest network:echConscryptTest network:echPlatformTest --continue
+          ./gradlew network:networkTest network:echTest network:echConscryptTest --continue
           -PtestJavaVersion=${{ matrix.javaVersion }}
           ${{ matrix.okhttpVersion && format('-PokhttpVersion={0}', matrix.okhttpVersion) || '' }}
 

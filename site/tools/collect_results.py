@@ -35,6 +35,13 @@ this repository is red; `loomTest`, `hostileTest`, `echTest` and `networkTest` f
 recorded findings — about OkHttp, about the platform, or about a server someone else operates —
 which is why the build stays green. See "Suites that report rather than gate" in the README.
 
+Not gating is not the same as not mattering, and the two used to be conflated: every suite
+calling a server somebody else runs reported in amber, so an ECH regression and a badssl.com
+outage looked alike. Severity separates them. A `critical` suite is one this repository is
+currently *for* — an unexpected failure there is the headline, and turns the page red — while a
+`watch` suite stays amber because a failure is as likely to be the far end as the client. Both
+still record rather than gate: the build's colour is not what changes, the page's is.
+
 Endpoint availability is collected separately from results, and deliberately so: a public
 test server that has gone away should read as *unavailable* rather than as OkHttp failing.
 The preflight reports each endpoint's state, the tests that need a down endpoint skip
@@ -47,6 +54,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import re
 import sys
 import xml.etree.ElementTree as ElementTree
 
@@ -65,6 +73,98 @@ REPORTING_TASKS = {
 # defo.ie has no way to say it reports rather than gates except by being named here. Everything
 # else in the Android module runs against containers this repository starts.
 REPORTING_CLASSES = {"PublicEncryptedClientHelloTest"}
+
+# What this repository is currently trying to find out. Everything here reports rather than
+# gates, exactly as before; severity decides only how loudly an *unexpected* failure is shown.
+#
+# ECH is the work in flight, so its suites are critical: a case that passed yesterday and fails
+# today is the most interesting thing on the page, and burying it in the same amber as a flaky
+# third-party server is how a real regression goes unnoticed for a week. Move a suite back to
+# `watch` when its question has been answered and it is only being kept honest.
+#
+# Expected failures are unaffected — a predicted failure is amber whatever its suite's severity,
+# because it is not news. So is a skip: an endpoint that has gone away reads as unavailable, not
+# as a client that broke.
+CRITICAL_SUITES = {
+    "EchTest",
+    "EchConscryptTest",
+    "EchClientHelloTest",
+    "PublicEncryptedClientHelloTest",
+}
+
+
+def severity_of(suite_name: str) -> str:
+    return "critical" if suite_name in CRITICAL_SUITES else "watch"
+
+# Failures that are the point rather than the problem.
+#
+# A suite here is asking a question whose answer is currently "no", and saying so is why it
+# exists — EchTest reports that OkHttp can't do ECH on the JVM, and a green EchTest would mean
+# the finding had been lost, not that the bug was fixed. Those failures are shown, and shown in
+# amber, but folded away: the page's red is reserved for a result nobody predicted.
+#
+# The reason is required, and is what the page shows instead of a stack trace. Cases are named
+# individually rather than by wildcard on purpose — a new case in one of these suites should
+# arrive as an unexpected failure and be looked at, not inherit an excuse written for its
+# neighbours.
+EXPECTED_FAILURES = {
+    "EchTest": {
+        f"{case} JDK": (
+            "OkHttp's ConscryptPlatform takes the ECH config list and drops it, and no released "
+            "Conscrypt has the method for it to call — so this cannot pass until a Conscrypt "
+            "after 2.7.0 ships and OkHttp can compile against it. EchPlatformTest runs the same "
+            "request with that one call added."
+        )
+        for case in (
+            "cloudflareUsesEch",
+            "echIsAcceptedOnTlsEchDev",
+            "echIsAcceptedOnDefoIe",
+            "echIsRetriedOnStaleTlsEchDev",
+            "tlsIsNotUsedOnTls12TlsEchDev",
+        )
+    }
+    | {
+        # The retry cases can't pass on either platform: falling back after a rejection needs
+        # SSL_get0_ech_retry_configs, which Conscrypt exposes on Android and discards on the JVM.
+        # Keyed separately from the JDK ones because the reason is a different one.
+        f"{case} CONSCRYPT_ECH": (
+            "Falling back after a server rejects ECH needs the retry configs read back, which "
+            "takes SSL_get0_ech_retry_configs. Conscrypt exposes that on Android and discards it "
+            "on the JVM, so no platform written here can fall back rather than fail."
+        )
+        for case in (
+            "echIsRetriedOnStaleTlsEchDev",
+            "tlsIsNotUsedOnTls12TlsEchDev",
+        )
+    },
+    "EchConscryptTest": {
+        "tls12IsReachedWithoutEch": (
+            "Falling back after a server rejects ECH needs the retry configs read back, which "
+            "takes SSL_get0_ech_retry_configs. Conscrypt exposes that on Android and discards it "
+            "on the JVM, so no client here can fall back rather than fail."
+        ),
+    },
+}
+
+
+def normalise_case(name: str) -> str:
+    """The case name with the machinery stripped off, for matching and for display.
+
+    Two dialects arrive here. A parameterised JVM case is `cloudflareUsesEch(TlsPlatform) JDK`,
+    where the parameter list is noise and the trailing argument is the thing that identifies it.
+    An Android case is `cloudflareUsesEch[emulator-5554 - 17]`, where the device is noise too —
+    the platform is already recorded per suite, and putting the emulator's serial number in a
+    test's name only makes two runs of the same test look like different tests.
+    """
+    name = re.sub(r"\[[^\]]*\]\s*$", "", name)
+    name = re.sub(r"\([^)]*\)", "", name)
+    return " ".join(name.split())
+
+
+def expected_reason(suite_name: str, case_name: str) -> str:
+    """Why this case failing is the expected answer, or empty if it isn't."""
+    return EXPECTED_FAILURES.get(suite_name, {}).get(case_name, "")
+
 
 # How many collections the history keeps. Enough for the trend strip to show a few weeks of
 # daily runs without the file growing without bound.
@@ -92,6 +192,8 @@ def parse_suite(
     if root.tag == "testsuites":
         root = root.find("testsuite") or root
 
+    simple_name = root.get("name", path.stem).rsplit(".", 1)[-1]
+
     cases = []
     for case in root.iter("testcase"):
         failure = case.find("failure")
@@ -112,9 +214,18 @@ def parse_suite(
             message = ""
             trace = ""
 
+        raw_name = case.get("name", "")
+        case_name = normalise_case(raw_name)
+        reason = expected_reason(simple_name, case_name) if status == "failed" else ""
+        if reason:
+            status = "expected"
+
         cases.append(
             {
-                "name": case.get("name", ""),
+                "name": case_name,
+                # Kept so a name on the page can still be found in the XML it came from.
+                "rawName": raw_name,
+                "expectedReason": reason,
                 "className": case.get("classname", ""),
                 "status": status,
                 "timeSeconds": float(case.get("time") or 0.0),
@@ -124,7 +235,6 @@ def parse_suite(
             }
         )
 
-    simple_name = root.get("name", path.stem).rsplit(".", 1)[-1]
     return {
         "name": f"{simple_name} · {variant}" if variant else simple_name,
         "className": root.get("name", ""),
@@ -135,9 +245,13 @@ def parse_suite(
         # and a JVM one, and "which platform" is then a property of the suite, not of the card.
         "platform": platform,
         "reporting": task in REPORTING_TASKS or simple_name in REPORTING_CLASSES,
+        "severity": severity_of(simple_name),
         "timeSeconds": float(root.get("time") or 0.0),
         "passed": sum(1 for c in cases if c["status"] == "passed"),
+        # `failed` stays the count of failures nobody predicted, so every existing reader — the
+        # roll-up, the history, the cards — keeps treating it as the number that matters.
         "failed": sum(1 for c in cases if c["status"] == "failed"),
+        "expected": sum(1 for c in cases if c["status"] == "expected"),
         "skipped": sum(1 for c in cases if c["status"] == "skipped"),
         "cases": sorted(cases, key=lambda c: c["name"]),
     }
@@ -217,7 +331,13 @@ def parse_client_hello(directory: pathlib.Path) -> dict | None:
 
 def suite_status(suite: dict) -> str:
     if suite["failed"]:
-        return "finding" if suite["reporting"] else "failed"
+        # Red for a suite that gates, and for one this repository is currently about. Amber for
+        # a suite being kept honest, where the far end is as likely a cause as the client.
+        if not suite["reporting"] or suite.get("severity") == "critical":
+            return "failed"
+        return "finding"
+    if suite.get("expected"):
+        return "expected"
     if suite["passed"]:
         return "passed"
     return "skipped"
@@ -225,7 +345,7 @@ def suite_status(suite: dict) -> str:
 
 def roll_up(statuses: list[str]) -> str:
     """The worst status in a set, with findings ranked below outright failure."""
-    for candidate in ("failed", "finding", "passed", "skipped"):
+    for candidate in ("failed", "finding", "expected", "passed", "skipped"):
         if candidate in statuses:
             return candidate
     return "unknown"
@@ -315,6 +435,7 @@ def group_by_version(artifacts: list[dict]) -> list[dict]:
         version["status"] = roll_up([suite_status(s) for s in suites])
         version["passed"] = sum(s["passed"] for s in suites)
         version["failed"] = sum(s["failed"] for s in suites)
+        version["expected"] = sum(s["expected"] for s in suites)
         version["skipped"] = sum(s["skipped"] for s in suites)
         version["timeSeconds"] = round(sum(s["timeSeconds"] for s in suites), 1)
 
@@ -338,6 +459,7 @@ def summarise(snapshot: dict) -> dict:
                 "status": v["status"],
                 "passed": v["passed"],
                 "failed": v["failed"],
+                "expected": v["expected"],
                 "skipped": v["skipped"],
                 "suites": {s["name"]: suite_status(s) for s in v["suites"]},
             }

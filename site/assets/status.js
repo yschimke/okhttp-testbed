@@ -14,6 +14,7 @@ const STATUS_TEXT = {
   passed: "passing",
   failed: "failing",
   finding: "findings",
+  expected: "expected",
   skipped: "not run",
   unknown: "unknown",
 };
@@ -101,7 +102,11 @@ function renderVersionCards(snapshot) {
       ]),
       el("div", {}, [
         el("div", { className: "n-failed", textContent: version.failed }),
-        el("div", { className: "count-label", textContent: "failed" }),
+        el("div", { className: "count-label", textContent: "unexpected" }),
+      ]),
+      el("div", {}, [
+        el("div", { className: "n-expected", textContent: version.expected ?? 0 }),
+        el("div", { className: "count-label", textContent: "expected" }),
       ]),
       el("div", {}, [
         el("div", { className: "n-skipped", textContent: version.skipped }),
@@ -137,6 +142,7 @@ function renderSuiteTable(snapshot) {
     el("th", { textContent: "Suite" }),
     el("th", { textContent: "Workflow" }),
     el("th", { textContent: "Gradle task" }),
+    el("th", { textContent: "Severity" }),
     ...versions.map((v) => el("th", { textContent: v.okhttpVersion })),
   ]);
 
@@ -146,17 +152,26 @@ function renderSuiteTable(snapshot) {
       el("td", { className: "suite" }, any ? suiteLink(any) : name),
       el("td", { className: "mono", textContent: any ? any.workflow : "" }),
       el("td", { className: "mono", textContent: any ? any.task : "" }),
+      el("td", {
+        className: "card-label",
+        textContent: any ? (any.reporting ? (any.severity ?? "watch") : "gates") : "",
+      }),
       ...versions.map((version) => {
         const suite = version.suites.find((s) => s.name === name);
         if (!suite) return el("td", {}, el("span", { className: "pill unknown", textContent: "—" }));
+        const expected = suite.expected ?? 0;
         const status = suite.failed
-          ? suite.reporting ? "finding" : "failed"
+          ? suite.reporting && suite.severity !== "critical" ? "finding" : "failed"
+          : expected ? "expected"
           : suite.passed ? "passed" : "skipped";
         return el("td", {}, [
           pill(status),
           el("span", {
             className: "card-label",
-            textContent: ` ${suite.passed}/${suite.passed + suite.failed} in ${suite.timeSeconds}s`,
+            textContent:
+              ` ${suite.passed}/${suite.passed + suite.failed + expected}` +
+              (expected ? ` (+${expected} expected)` : "") +
+              ` in ${suite.timeSeconds}s`,
           }),
         ]);
       }),
@@ -170,32 +185,46 @@ function renderSuiteTable(snapshot) {
 }
 
 function renderFailures(snapshot) {
-  // Failures first, then findings, then the tests that never ran. A skip belongs here rather
-  // than only in a count: "this didn't run because defo.ie is down" is the answer to the
-  // question a red-looking number would otherwise raise.
-  const rank = { failed: 0, finding: 1, skipped: 2 };
+  // Unexpected first, then findings, then the failures that are the point, then the tests that
+  // never ran. A skip belongs here rather than only in a count: "this didn't run because defo.ie
+  // is down" is the answer to the question a red-looking number would otherwise raise.
+  const rank = { failed: 0, finding: 1, expected: 2, skipped: 3 };
   const items = [];
 
   for (const version of snapshot.versions) {
     for (const suite of version.suites) {
       for (const testCase of suite.cases) {
         if (testCase.status === "passed") continue;
+        // Severity decides how loudly an unexpected failure is shown. A critical suite is one
+        // this repository is currently for, so its surprises are red even though it reports
+        // rather than gates; a watch suite stays amber, because the far end is as likely a
+        // cause as the client. Expected failures and skips are unaffected by either.
         const kind =
           testCase.status === "skipped" ? "skipped"
-          : suite.reporting ? "finding"
+          : testCase.status === "expected" ? "expected"
+          : suite.reporting && suite.severity !== "critical" ? "finding"
           : "failed";
 
         const source = sourceUrl(suite);
         // Open, because the assertion is the reason to come back to this page — a triangle to
         // click before you can read it is one more step for the thing you came for. Skips are
         // the exception: the reason is one line, and the Endpoints table already carries it.
-        const detail = el("details", { className: "finding-detail", open: kind !== "skipped" }, [
+        // Open, because the assertion is the reason to come back to this page. Two exceptions,
+        // both cases where the one line that matters is already in the summary: a skip, and a
+        // failure that was predicted — those are folded so the unpredicted ones stand out.
+        const detail = el("details", {
+          className: "finding-detail",
+          open: kind !== "skipped" && kind !== "expected",
+        }, [
           el("summary", {}, [
             pill(kind),
             ` ${suite.name}.${testCase.name} — ${version.okhttpVersion}`,
           ]),
           // The trace usually opens with the message verbatim, so printing both repeats the
           // one line that matters. Show the message alone only when it isn't already there.
+          testCase.expectedReason
+            ? el("p", { className: "expected-reason", textContent: testCase.expectedReason })
+            : null,
           el("pre", {
             textContent:
               (testCase.detail?.startsWith(testCase.message)
