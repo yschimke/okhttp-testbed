@@ -85,10 +85,14 @@ class ClientHelloExtensionsTest {
 
     assertThat(extensions, name = "extensions offered").isNotEmpty()
 
-    // Two a TLS 1.3 ClientHello cannot do without: the name being requested, and the version
-    // list, since 1.3 is negotiated through supported_versions rather than the record header.
-    // Anything beyond these is the platform's business and is recorded rather than required.
-    assertThat(extensions, name = "extensions offered").contains("server_name")
+    // The one extension a TLS 1.3 handshake cannot do without: 1.3 is negotiated through
+    // supported_versions rather than the record header, and the report says 1.3 was negotiated.
+    // Anything beyond it is the platform's business and is recorded rather than required.
+    //
+    // `server_name` is deliberately not among them, though every ClientHello on the internet
+    // carries one. The fixture is reached as `localhost`, and the JDK omits SNI for a name with
+    // no dot in it — so asserting it here would be asserting a fact about the container's
+    // address rather than about OkHttp. It is in the record either way.
     assertThat(extensions, name = "extensions offered").contains("supported_versions")
   }
 

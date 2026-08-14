@@ -286,6 +286,11 @@ it carries the two extensions no TLS 1.3 handshake can omit, and the ECH flag ag
 list it came from — and records what OkHttp offered without asserting it. Today's JVM offers no
 ECH extension at all; pinning that would turn the feature arriving into a failure.
 
+`server_name` is not among the required ones, though every ClientHello on the internet carries
+one. The fixture is reached as `localhost`, and the JDK omits SNI for a name with no dot in it —
+so requiring it would assert a fact about the container's address rather than about OkHttp. It
+is in the record either way, which is the distinction this whole section runs on.
+
 The resolver matrix
 -------------------
 
