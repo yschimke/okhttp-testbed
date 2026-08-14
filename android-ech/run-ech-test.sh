@@ -92,9 +92,44 @@ adb reverse tcp:8053 "tcp:$doh_host_port"
 adb reverse tcp:443 "tcp:$target_host_port"
 adb reverse tcp:8443 "tcp:$target_host_port"
 
-"$repository_root/gradlew" -p "$repository_root" :android-ech:connectedDebugAndroidTest \
-  "${gradle_arguments[@]}" \
-  -Pandroid.testInstrumentationRunnerArguments.class=okhttp.testbed.android.ech.EncryptedClientHelloTest \
+# One instrumentation run per suite, because the two report differently and Gradle writes both
+# to the same place. `results_dir` is moved aside after each run so the workflow can upload them
+# together; without that the second run would overwrite the first.
+results_dir="$repository_root/android-ech/build/outputs/androidTest-results/connected"
+
+run_suite() {
+  local class="$1"
+  shift
+  local status=0
+
+  rm -rf "$results_dir"
+  # `|| status=$?` rather than a bare call: this runs under `set -e`, and a failing suite whose
+  # results were never moved aside is a failing suite nobody can read.
+  "$repository_root/gradlew" -p "$repository_root" :android-ech:connectedDebugAndroidTest \
+    "${gradle_arguments[@]}" \
+    -Pandroid.testInstrumentationRunnerArguments.class="okhttp.testbed.android.ech.$class" \
+    "$@" || status=$?
+
+  if [ -d "$results_dir" ]; then
+    rm -rf "$results_dir-$class"
+    mv "$results_dir" "$results_dir-$class"
+  fi
+  return $status
+}
+
+# The public servers first, and not allowed to fail the run. tls-ech.dev, defo.ie and
+# cloudflare-ech.com belong to other people; an outage there is not a result about OkHttp, and
+# the JVM `network` suites treat the same servers the same way. The XML still records what
+# happened, which is what the status page reads.
+public_status=0
+run_suite PublicEncryptedClientHelloTest || public_status=$?
+if [ "$public_status" -ne 0 ]; then
+  echo "PublicEncryptedClientHelloTest failed; recorded, not fatal." >&2
+fi
+
+# The fixture suite does gate: it runs against containers this repository starts, so a failure
+# is about OkHttp or about this repository, and there is nobody else to blame for it.
+run_suite EncryptedClientHelloTest \
   -Pandroid.testInstrumentationRunnerArguments.ech=true \
   -Pandroid.testInstrumentationRunnerArguments.dohPort=8053 \
   -Pandroid.testInstrumentationRunnerArguments.caCertificate="$ca_certificate"

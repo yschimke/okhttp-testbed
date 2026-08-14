@@ -39,12 +39,32 @@ fun compareVersions(
 ): Int = a.zip(b).firstNotNullOfOrNull { (x, y) -> (x - y).takeIf { it != 0 } } ?: 0
 
 val echTestPattern = "EchTest"
+val echConscryptTestPattern = "EchConscryptTest"
+val echClientHelloTestPattern = "EchClientHelloTest"
+
+// The Conscrypt built from `google3-export`, if someone has fetched or built it. It is not on
+// any repository — `Conscrypt.setEchConfigList` exists on that branch and in no release — so
+// `conscrypt/fetch-conscrypt.sh` stages it here. Absent, the suite that needs it is left out of
+// the build entirely rather than failing to compile. See conscrypt/README.md.
+val conscryptJars =
+  fileTree(rootProject.layout.projectDirectory.dir("conscrypt/build/dist")) {
+    include("conscrypt-openjdk-*.jar")
+  }
+
+val hasConscrypt = !conscryptJars.isEmpty
 
 sourceSets {
   test {
     kotlin {
       if (!supportsEch) {
         exclude("**/$echTestPattern.kt")
+      }
+      if (!supportsEch || !hasConscrypt) {
+        exclude(
+          "**/$echConscryptTestPattern.kt",
+          "**/$echClientHelloTestPattern.kt",
+          "**/ConscryptEch.kt",
+        )
       }
     }
   }
@@ -83,7 +103,11 @@ val networkTest =
     val testSourceSet = sourceSets.test.get()
     testClassesDirs = testSourceSet.output.classesDirs
     classpath = testSourceSet.runtimeClasspath
-    exclude("**/$echTestPattern.class")
+    exclude(
+      "**/$echTestPattern.class",
+      "**/$echConscryptTestPattern.class",
+      "**/$echClientHelloTestPattern.class",
+    )
 
     reportEndpointsTo("networkTest")
     ignoreFailures = true
@@ -114,18 +138,51 @@ val echTest =
     }
   }
 
+// The same servers, through Conscrypt rather than the JDK. Its own task for the same reason
+// echTest is: its result answers a different question. echTest says whether OkHttp can do ECH as
+// shipped, which on the JVM it cannot; this says whether the missing piece is the TLS stack and
+// nothing else. Reading them together is the point, so they report side by side.
+val echConscryptTest =
+  tasks.register<Test>("echConscryptTest") {
+    group = "verification"
+    description = "Reports whether ECH works on the JVM with a Conscrypt that supports it."
+
+    val testSourceSet = sourceSets.test.get()
+    testClassesDirs = testSourceSet.output.classesDirs
+    classpath = testSourceSet.runtimeClasspath
+    // EchClientHelloTest runs here rather than under networkTest despite calling nobody: it
+    // answers the same question as the rest of this task and needs the same Conscrypt, and
+    // reading a "the servers agree" result next to a "the bytes are right" one is the point.
+    include("**/$echConscryptTestPattern.class", "**/$echClientHelloTestPattern.class")
+
+    reportEndpointsTo("echConscryptTest")
+    enabled = supportsEch && hasConscrypt
+    ignoreFailures = true
+
+    doFirst {
+      logger.lifecycle("Testing ECH against OkHttp $okhttpVersion on Conscrypt")
+    }
+  }
+
 if (!supportsEch) {
   logger.lifecycle("Skipping EchTest: OkHttp $okhttpVersion predates the ECH API")
 }
 
+if (!hasConscrypt) {
+  logger.lifecycle("Skipping EchConscryptTest: no Conscrypt build. Run conscrypt/fetch-conscrypt.sh.")
+}
+
 tasks.check {
-  dependsOn(networkTest, echTest)
+  dependsOn(networkTest, echTest, echConscryptTest)
 }
 
 dependencies {
   testImplementation("com.squareup.okhttp3:okhttp:$okhttpVersion")
   testImplementation("com.squareup.okhttp3:okhttp-tls:$okhttpVersion")
   testImplementation("com.squareup.okhttp3:okhttp-dnsoverhttps:$okhttpVersion")
+
+  // Absent unless someone staged it; `hasConscrypt` leaves EchConscryptTest out when it is.
+  testImplementation(conscryptJars)
 
   testImplementation(libs.junit.jupiter.api)
   testImplementation(libs.junit.jupiter.params)

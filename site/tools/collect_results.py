@@ -45,7 +45,13 @@ import sys
 import xml.etree.ElementTree as ElementTree
 
 # Gradle test tasks whose failures are findings about OkHttp rather than breakage here.
-REPORTING_TASKS = {"loomTest", "echTest", "networkTest"}
+REPORTING_TASKS = {"loomTest", "echTest", "echConscryptTest", "networkTest"}
+
+# The same distinction for suites that can't make it with a task name. Android instrumentation
+# runs under one task whatever it is testing, so the Android suite that calls tls-ech.dev and
+# defo.ie has no way to say it reports rather than gates except by being named here. Everything
+# else in the Android module runs against containers this repository starts.
+REPORTING_CLASSES = {"PublicEncryptedClientHelloTest"}
 
 # How many collections the history keeps. Enough for the trend strip to show a few weeks of
 # daily runs without the file growing without bound.
@@ -98,7 +104,7 @@ def parse_suite(path: pathlib.Path, task: str, workflow: str, run_url: str) -> d
         "workflow": workflow,
         "runUrl": run_url,
         "task": task,
-        "reporting": task in REPORTING_TASKS,
+        "reporting": task in REPORTING_TASKS or simple_name in REPORTING_CLASSES,
         "timeSeconds": float(root.get("time") or 0.0),
         "passed": sum(1 for c in cases if c["status"] == "passed"),
         "failed": sum(1 for c in cases if c["status"] == "failed"),

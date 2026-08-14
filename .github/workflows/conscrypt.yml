@@ -1,0 +1,124 @@
+name: conscrypt
+
+# Builds the Conscrypt the ECH suites need, and caches it as a release on this repository.
+#
+# Not on every commit, and not as part of any test workflow: the build takes around fifteen
+# minutes, needs a C++ toolchain, a cross compiler and two source trees, and its output depends
+# on nothing in this repository except `conscrypt/pinned.properties`. So it runs when that file
+# changes, or on demand, and everything else downloads what it published. The release tag carries
+# both pinned shas, which makes the cache self-invalidating: bump a pin and the tag no longer
+# exists, so this workflow builds and publishes it, and the suites pick it up on their next run.
+#
+# See conscrypt/README.md for why this is being built from a branch at all.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'conscrypt/**'
+      - '.github/workflows/conscrypt.yml'
+  pull_request:
+    paths:
+      - 'conscrypt/**'
+      - '.github/workflows/conscrypt.yml'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Rebuild and replace the release even if the tag already exists'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  conscrypt:
+    name: conscrypt
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Conscrypt's own build wants a JDK to compile against and JNI headers to build against.
+      - name: Configure JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: 17
+
+      - name: Resolve the release tag
+        id: pin
+        run: |
+          echo "tag=$(conscrypt/release-tag.sh)" >> "$GITHUB_OUTPUT"
+
+      # A release for these two shas is the whole point of the cache, so having one already is
+      # the good outcome, not a reason to do the work again. `force` is for the case where a
+      # published asset is wrong rather than missing.
+      - name: Check for an existing release
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ steps.pin.outputs.tag }}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install the build toolchain
+        if: steps.existing.outputs.exists == 'false' || inputs.force
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get -qq install -y --no-install-recommends \
+            clang \
+            cmake \
+            g++-aarch64-linux-gnu \
+            binutils-aarch64-linux-gnu \
+            ninja-build
+
+      - name: Build Conscrypt
+        if: steps.existing.outputs.exists == 'false' || inputs.force
+        run: conscrypt/build-conscrypt.sh
+
+      # A pull request touching the pin gets the build checked and nothing published: a release
+      # is a fact about the repository, and a proposed pin isn't one yet.
+      - name: Publish the release
+        if: >-
+          github.event_name != 'pull_request'
+          && (steps.existing.outputs.exists == 'false' || inputs.force)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag='${{ steps.pin.outputs.tag }}'
+          gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Conscrypt for ECH ($tag)" \
+            --notes-file conscrypt/RELEASE_NOTES.md \
+            conscrypt/build/dist/*
+
+      # The suites consume this by tag, so a run that built something is worth proving can be
+      # fetched back — including on a pull request, where it exercises the fallback path.
+      - name: Upload the build
+        if: always() && (steps.existing.outputs.exists == 'false' || inputs.force)
+        uses: actions/upload-artifact@v4
+        with:
+          name: conscrypt-${{ steps.pin.outputs.tag }}
+          path: conscrypt/build/dist/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Report
+        run: |
+          if [ '${{ steps.existing.outputs.exists }}' = 'true' ] && [ '${{ inputs.force }}' != 'true' ]; then
+            echo "Release ${{ steps.pin.outputs.tag }} already exists; nothing to build." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Built ${{ steps.pin.outputs.tag }}." >> "$GITHUB_STEP_SUMMARY"
+          fi
