@@ -66,7 +66,7 @@ jobs:
         # --continue so a failing container test doesn't stop loomTest from running:
         # every suite should report every run, whatever the others did.
         run: >
-          ./gradlew containers:test containers:loomTest --continue
+          ./gradlew containers:test containers:loomTest containers:hostileTest --continue
           ${{ matrix.okhttpVersion && format('-PokhttpVersion={0}', matrix.okhttpVersion) || '' }}
 
       # What the XML can't say: which OkHttp version 'pinned' actually resolved to, and

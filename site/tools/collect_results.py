@@ -25,9 +25,9 @@ an Android suite both testing 5.5.0-SNAPSHOT belong on one card, because compari
 is what this repository is for.
 
 The Gradle task a suite ran under decides whether its result gates. `test` failing means
-this repository is red; `loomTest`, `echTest` and `networkTest` failing are recorded
-findings — about OkHttp, about the platform, or about a server someone else operates — which
-is why the build stays green. See "Suites that report rather than gate" in the README.
+this repository is red; `loomTest`, `hostileTest`, `echTest` and `networkTest` failing are
+recorded findings — about OkHttp, about the platform, or about a server someone else operates —
+which is why the build stays green. See "Suites that report rather than gate" in the README.
 
 Endpoint availability is collected separately from results, and deliberately so: a public
 test server that has gone away should read as *unavailable* rather than as OkHttp failing.
@@ -45,7 +45,7 @@ import sys
 import xml.etree.ElementTree as ElementTree
 
 # Gradle test tasks whose failures are findings about OkHttp rather than breakage here.
-REPORTING_TASKS = {"loomTest", "echTest", "echConscryptTest", "networkTest"}
+REPORTING_TASKS = {"loomTest", "hostileTest", "echTest", "echConscryptTest", "networkTest"}
 
 # The same distinction for suites that can't make it with a task name. Android instrumentation
 # runs under one task whatever it is testing, so the Android suite that calls tls-ech.dev and

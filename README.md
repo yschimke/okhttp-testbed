@@ -14,7 +14,7 @@ Suites
 
 | Suite         | What it needs               | What it covers                                                      |
 |---------------|-----------------------------|---------------------------------------------------------------------|
-| `containers`  | Docker                      | SOCKS5 and HTTP proxies, TLS via MockServer, HTTP semantics via go-httpbin, chains that must be rejected, virtual threads (Loom) |
+| `containers`  | Docker                      | SOCKS5 and HTTP proxies, TLS via MockServer, HTTP semantics via go-httpbin, chains that must be rejected, hostile responses, virtual threads (Loom) |
 | `network`     | Outbound network            | ALPN and SNI overrides, Let's Encrypt trust, ECH on the public servers |
 | `android-ech` | Docker, an API 37 emulator  | Encrypted Client Hello over DoH: accepted, retried, and declined, plus the public servers |
 
@@ -103,6 +103,34 @@ The assertion is `SSLException`, not a specific subclass. Which one a client rep
 chain is the client's business; pinning it would turn a change in OkHttp's error reporting into
 a failure about certificate validation.
 
+Responses that are wrong on purpose
+-----------------------------------
+
+httpbin covers what a well-behaved server does; the failures that reach users come from the
+other kind. `test-server` produces those by hijacking the connection and writing bytes no HTTP
+library would emit, and two suites read them, split by what kind of answer they give.
+
+`HostileResponseTest` **gates**. It asserts that a response which is malformed beyond argument —
+a reset mid-body, a body shorter than its `Content-Length`, chunks with no terminator, a status
+line that is not one — fails rather than returning a body as if nothing were wrong. Silently
+accepting a truncated body is the failure mode that costs users data, and it is invisible against
+a well-behaved server. Its positive control is `/hostile/half-close`, which writes a *complete*
+response and only then shuts its write half: that one must succeed, or the others prove nothing
+more than that the container is unreachable.
+
+Four endpoints are deliberately left out of it — `duplicate-content-length`,
+`content-length-and-chunked`, `huge-header` and `informational-storm`. Those are ambiguous rather
+than broken: the RFCs leave a client latitude, so asserting either outcome would be asserting a
+preference.
+
+`HostileRetryTest` **reports**, and asks the question that matters more — not whether the call
+fails but whether it is *retried*. See the note on it below.
+
+Both use the plain port. The hostile endpoints work by hijacking the connection, which is only
+possible under HTTP/1.1; the TLS listener offers h2, where the server answers `501` with an
+explanation instead. Testing them over TLS would assert something about ALPN rather than about
+malformed responses.
+
 Where a test needs something the public API doesn't offer, prefer solving it with the
 container instead of reaching into OkHttp — for example `BasicMockServerTest.trustMockServer()`
 builds a real trust manager from MockServer's own keystore rather than disabling
@@ -138,13 +166,13 @@ Running locally
 Requires Docker and JDK 21+.
 
 ```
-./gradlew containers:test containers:loomTest
+./gradlew containers:test containers:loomTest containers:hostileTest
 ./gradlew network:networkTest network:echTest
 ./gradlew network:echConscryptTest   # after conscrypt/fetch-conscrypt.sh; see ECH on the JVM
 ```
 
-`test` covers the gating suites and fails the build. `loomTest`, `networkTest`, `echTest` and
-`echConscryptTest` all run with `ignoreFailures`, because what they report is not this repository being broken —
+`test` covers the gating suites and fails the build. `loomTest`, `hostileTest`, `networkTest`,
+`echTest` and `echConscryptTest` all run with `ignoreFailures`, because what they report is not this repository being broken —
 see [Suites that report rather than gate](#suites-that-report-rather-than-gate). `network`
 has no gating task at all: its `test` task is disabled, so those two are the only way to run
 it.
@@ -404,8 +432,8 @@ is that moving a module without updating `SOURCE_ROOTS` in `site/assets/status.j
 Three distinctions the page depends on, all decided when the results are collected:
 
 - The Gradle task a suite ran under decides whether a failure is **failing** or a
-  **finding**. `test` failing means this repository is red; `loomTest`, `networkTest` and
-  `echTest` failing are recorded findings, and the page shows them in amber — see below. A
+  **finding**. `test` failing means this repository is red; `loomTest`, `hostileTest`,
+  `networkTest` and `echTest` failing are recorded findings, and the page shows them in amber — see below. A
   suite's task comes
   from the artifact layout for the container and network suites, and from `run-metadata.json` for
   `android-ech`, where the XML is laid out by device rather than by task.
@@ -450,6 +478,13 @@ VirtualThread[#51]/runnable@ForkJoinPool-1-worker-3 reason:MONITOR
 `Http2Connection.newStream` holds a monitor across `Http2Writer.flush`'s blocking write.
 JEP 491 removes this class of pinning on JDK 24+, so the same test should pass there —
 which is exactly the kind of difference this repository exists to record.
+
+`HostileRetryTest` is a third. It counts how many times OkHttp sends a request the server
+killed under it, which matters most for a `POST`: one sent twice because the connection dropped
+mid-response can charge a card twice, and the caller sees a single `IOException` either way.
+Whatever the count turns out to be, it is a fact about OkHttp's retry policy rather than a defect
+here, so it is recorded. Its sibling `HostileResponseTest` stays fatal, because "a truncated body
+must not read as a complete one" is an invariant rather than a policy.
 
 `EchTest` is the other of that kind. ECH takes two halves: OkHttp reads an ECH config list out of the
 DNS HTTPS record, and the TLS stack encrypts the client hello with it. OkHttp's half works
