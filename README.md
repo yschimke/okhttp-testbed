@@ -620,6 +620,13 @@ now several jobs wide, and a failure is easier to read against a quiet runner qu
 against three other suites' worth of containers and emulators. It also keeps the network
 suites' load on other people's servers spread out rather than arriving in one burst.
 
+The `job-reruns` workflow maintains a Renovate-style **Job re-runs** issue for those four
+workflows. Its table links to the latest scheduled or manual run and shows the result. Checking
+one or more items under **Run now** dispatches exactly those workflows on `main`; the workflow
+clears the accepted boxes immediately, and refreshes the table whenever each dispatched run
+completes. The issue and its `job-reruns` label are created automatically when the workflow
+first lands on `main`, and `workflow_dispatch` can recreate or refresh them later.
+
 Widening the matrices is what makes the status page's suite rows carry the platform they ran
 on: a version card merges every artifact testing that version, so `GoHttpbinTest · JDK 17`
 and `GoHttpbinTest · JDK 25` are separate rows. The variant comes from `run-metadata.json`
