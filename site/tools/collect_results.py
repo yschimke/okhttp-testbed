@@ -112,7 +112,7 @@ def severity_of(suite_name: str) -> str:
 # neighbours.
 EXPECTED_FAILURES = {
     "EchTest": {
-        f"{case} JDK": (
+        f"{case}{platform_suffix}": (
             "OkHttp's ConscryptPlatform takes the ECH config list and drops it, and no released "
             "Conscrypt has the method for it to call — so this cannot pass until a Conscrypt "
             "after 2.7.0 ships and OkHttp can compile against it. EchPlatformTest runs the same "
@@ -125,6 +125,10 @@ EXPECTED_FAILURES = {
             "echIsRetriedOnStaleTlsEchDev",
             "tlsIsNotUsedOnTls12TlsEchDev",
         )
+        # Older OkHttp versions ran EchTest only on the ordinary JVM platform, before the suite
+        # became parameterised. Their JUnit names therefore have no `JDK` suffix, but describe
+        # the same expected limitation. Only CONSCRYPT_ECH exercises EchConscryptPlatform.
+        for platform_suffix in ("", " JDK")
     }
     | {
         # The retry cases can't pass on either platform: falling back after a rejection needs
