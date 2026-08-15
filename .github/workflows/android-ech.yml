@@ -53,10 +53,10 @@ jobs:
       #       TLS 1.3 only — but the run still installs the instrumentation APK and calls
       #       `OkHttp.initialize`, so a published artifact that stopped loading on the oldest
       #       supported Android is caught here rather than by whoever still ships to it.
-      #   29  the first level with TLS 1.3, and so the first that can reach the fixture at all.
-      #       What it asserts is the fallback: a config list OkHttp cannot use must produce an
-      #       ordinary handshake to the real name, not a failed call.
-      #   34  the same, on the release most devices in the field are on.
+      #   30  an older level with TLS 1.3. What it asserts is the fallback: a config list
+      #       OkHttp cannot use must produce an ordinary handshake to the real name, not a
+      #       failed call.
+      #   35  the same, on a recent release used by devices in the field.
       #   37  where `android.net.ssl.EchConfigList` exists and ECH is actually performed.
       #
       # Play Store images exist only for the newest level, so the older rows take the plain
@@ -64,7 +64,7 @@ jobs:
       matrix: >-
         ${{ fromJSON(
           (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-          && '{"include":[{"apiLevel":"21","target":"default","arch":"x86_64"},{"apiLevel":"29","target":"google_apis","arch":"x86_64"},{"apiLevel":"34","target":"google_apis","arch":"x86_64"},{"apiLevel":"37.0","target":"google_apis_playstore_ps16k","arch":"x86_64"}]}'
+          && '{"include":[{"apiLevel":"21","target":"default","arch":"x86_64"},{"apiLevel":"30","target":"google_apis","arch":"x86_64"},{"apiLevel":"35","target":"google_apis","arch":"x86_64"},{"apiLevel":"37.0","target":"google_apis_playstore_ps16k","arch":"x86_64"}]}'
           || '{"include":[{"apiLevel":"37.0","target":"google_apis_playstore_ps16k","arch":"x86_64"}]}'
         ) }}
 
