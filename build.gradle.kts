@@ -5,7 +5,6 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 plugins {
   alias(libs.plugins.kotlin.jvm) apply false
   alias(libs.plugins.android.library) apply false
-  alias(libs.plugins.android.junit5) apply false
 }
 
 // The JDK the suites *run* on: what a user's application would be running when it calls the

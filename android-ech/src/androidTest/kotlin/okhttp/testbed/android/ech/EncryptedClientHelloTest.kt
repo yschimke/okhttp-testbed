@@ -36,8 +36,8 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.Route
 import okhttp3.dnsoverhttps.DnsOverHttps
-import org.junit.jupiter.api.Assumptions.assumeTrue
-import org.junit.jupiter.api.Test
+import org.junit.Assume.assumeTrue
+import org.junit.Test
 
 /**
  * Encrypted Client Hello, end to end, against the containers `run-ech-test.sh` starts on the
@@ -117,10 +117,10 @@ class EncryptedClientHelloTest {
 
   private fun fixture(): Fixture {
     val arguments = InstrumentationRegistry.getArguments()
-    assumeTrue(arguments.getString("ech") == "true", "requires the host-side ECH fixtures")
+    assumeTrue("requires the host-side ECH fixtures", arguments.getString("ech") == "true")
     assumeTrue(
-      Build.VERSION.SDK_INT >= TLS_13_API_LEVEL,
       "the ECH fixture origin is TLS 1.3 only, which Android has from API $TLS_13_API_LEVEL",
+      Build.VERSION.SDK_INT >= TLS_13_API_LEVEL,
     )
     val dohPort = requireNotNull(arguments.getString("dohPort")).toInt()
     val caCertificate = Base64.decode(requireNotNull(arguments.getString("caCertificate")), Base64.DEFAULT)
