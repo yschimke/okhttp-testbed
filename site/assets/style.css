@@ -312,6 +312,45 @@ details.finding-detail pre {
   line-height: 1.5;
 }
 
+.finding-links, .incident-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+}
+
+.similarity-note {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  margin: 0.55rem 0 0;
+}
+
+details.incident-group {
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--fail);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  padding: 0.75rem 0.9rem;
+  margin: 0.75rem 0;
+}
+
+details.incident-group[data-kind="finding"],
+details.incident-group[data-kind="expected"] { border-left-color: var(--finding); }
+details.incident-group[data-kind="skipped"] { border-left-color: var(--skip); }
+
+details.incident-group > summary {
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.65rem;
+  font-family: var(--mono);
+  font-size: 0.88rem;
+}
+
+.incident-message { color: var(--text-muted); font-size: 0.8rem; }
+.incident-meta { color: var(--text-muted); font-size: 0.78rem; margin: 0.7rem 0; }
+details.incident-group > details.finding-detail { margin-left: 0.25rem; background: var(--bg-raised); }
+
 /* ---- open work ---- */
 
 .issue-groups {
