@@ -65,16 +65,20 @@ class PinningTest {
             .build(),
         ).build()
 
-    val failure =
+    val (result, failure) =
       try {
         client
           .newCall(Request.Builder().url("https://${Endpoint.BADSSL_PINNING.server}/").build())
           .execute()
-          .use { throw AssertionError("a wrong pin was accepted: HTTP ${it.code}") }
+          .use { TlsPolicyReport.Check(accepted = true, detail = "HTTP ${it.code}") to null }
       } catch (e: IOException) {
-        e
+        TlsPolicyReport.Check(accepted = false, detail = "${e.javaClass.simpleName}: ${e.message.orEmpty()}") to e
       }
 
+    TlsPolicyReport.record(TlsPolicyReport.PINNING, result)
+
+    if (result.accepted) throw AssertionError("a wrong pin was accepted: ${result.detail}")
+    checkNotNull(failure)
     assertThat(failure, name = "a deliberately wrong pin").isInstanceOf(SSLPeerUnverifiedException::class)
 
     val message = failure.message.orEmpty()
@@ -102,28 +106,9 @@ class PinningTest {
     assumeAvailable(Endpoint.BADSSL_REVOKED)
 
     val outcome = attempt("https://${Endpoint.BADSSL_REVOKED.server}/")
-    TlsPolicyReport.record("revoked certificate accepted", outcome)
+    TlsPolicyReport.record(TlsPolicyReport.REVOCATION, outcome)
 
     assumeDefinite(outcome, Endpoint.BADSSL_REVOKED)
-  }
-
-  /**
-   * Whether a chain is checked for Certificate Transparency. Recorded, not asserted.
-   *
-   * OkHttp enforces no SCTs, so the answer today is no on every platform, and the value is in
-   * noticing the day it changes — or the day a platform starts enforcing underneath it.
-   */
-  @Test
-  fun certificateTransparencyBehaviourIsRecorded() {
-    assumeAvailable(Endpoint.BADSSL_PINNING)
-
-    // A publicly trusted chain, which by definition carries SCTs: the interesting case is a chain
-    // *without* them, and that needs a private CA — `FixturePinningTest` connects to one and its
-    // success is the answer. What this records is the baseline, so the two can be read together.
-    val outcome = attempt("https://${Endpoint.BADSSL_PINNING.server}/")
-    TlsPolicyReport.record("publicly trusted chain accepted", outcome)
-
-    assumeDefinite(outcome, Endpoint.BADSSL_PINNING)
   }
 
   private fun attempt(url: String): TlsPolicyReport.Check =

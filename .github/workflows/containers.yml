@@ -160,5 +160,6 @@ jobs:
           name: container-test-results-${{ matrix.okhttpVersion || 'pinned' }}-jdk${{ matrix.javaVersion }}
           path: |
             containers/build/test-results/*/*.xml
+            containers/build/test-results/tlspolicy-*.json
             containers/build/test-results/run-metadata.json
           retention-days: 30

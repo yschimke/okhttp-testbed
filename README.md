@@ -325,8 +325,11 @@ Revocation and Certificate Transparency are **recorded, not asserted**. The JVM 
 revocation unless `com.sun.net.ssl.checkRevocation` is set and the PKIX parameters say how;
 Android varies by release; OkHttp enforces no SCTs at all. A suite insisting
 `revoked.badssl.com` "must" be refused would be reporting the platform's documented behaviour as
-a defect. So the answers go to `tlspolicy-<task>.json` and onto the status page, one row per
-platform, in neutral colours — the value is the day a row changes.
+a defect. The CT probe uses the controlled fixture's privately issued chain, which has no SCT, so
+the result is not confounded by a public test certificate expiring or rotating. The answers from
+the public and fixture suites are merged by platform into `tlspolicy-<task>.json` records and onto
+the status page as the three stable columns Revocation, Pinning and Certificate Transparency, one
+row per platform, in neutral colours — the value is the day a row changes.
 
 A timeout is not an answer, and skips. That distinction cost a red run before it was written down:
 badssl.com timed out mid-suite and a recording test failed, which put an outage in a column meant
