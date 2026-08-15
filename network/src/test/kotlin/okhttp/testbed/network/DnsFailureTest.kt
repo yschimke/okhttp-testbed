@@ -16,6 +16,7 @@
 package okhttp.testbed.network
 
 import assertk.assertThat
+import assertk.assertions.contains
 import assertk.assertions.isInstanceOf
 import assertk.assertions.isNotEmpty
 import assertk.assertions.isNotEqualTo
@@ -38,6 +39,11 @@ import org.junit.jupiter.api.Test
  * failure that all looks alike, so a caller cannot tell "this name does not exist" from "the
  * resolver is having a bad day" and retries — or doesn't — for the wrong reason.
  *
+ * The type is never the thing that tells them apart. `Dns.lookup` declares `UnknownHostException`
+ * and nothing else, so every case below — a bad signature, an absent name, a resolver answering
+ * `429` — arrives as that one class, and the message and the cause are the entire difference. What
+ * each case asserts is which of the two is carrying it.
+ *
  * The names are chosen so that the *server* produces the failure rather than the test faking it:
  * `dnssec-failed.org` is a deliberately broken signature published for this purpose, and a random
  * label under a real zone is an NXDOMAIN nobody has to maintain.
@@ -59,9 +65,9 @@ class DnsFailureTest {
 
     assertThat(failure, name = "$SERVFAIL").isInstanceOf(UnknownHostException::class)
 
-    // The message today is "DNS server failure". Asserted as *present* rather than as that exact
-    // string: the wording is OkHttp's to change, but a caller with nothing at all to log is the
-    // regression worth catching.
+    // The message today names the response code: "www.dnssec-failed.org: SERVFAIL". Asserted as
+    // *present* rather than as that exact string: the wording is OkHttp's to change, but a caller
+    // with nothing at all to log is the regression worth catching.
     assertThat(failure.message, name = "$SERVFAIL detail").isNotNull()
   }
 
@@ -69,9 +75,10 @@ class DnsFailureTest {
    * NXDOMAIN and SERVFAIL do not read alike.
    *
    * The two are different questions — "there is no such name" against "I could not find out" —
-   * and only the second is worth retrying. Today they are distinguishable in the crudest possible
-   * way: SERVFAIL carries a message and NXDOMAIN's is `null`. That is a low bar, and asserting
-   * that they *differ* rather than pinning either wording keeps this passing if OkHttp raises it.
+   * and only the second is worth retrying. They are the same *type*, so the message is the only
+   * thing carrying the difference; today it names the response code, `"$hostname: NXDOMAIN"`
+   * against `"$hostname: SERVFAIL"`. Asserting that the two *differ* rather than pinning either
+   * wording is what keeps this a test about the distinction rather than about a string.
    */
   @Test
   fun nxdomainDoesNotLookLikeAServerFailure() {
@@ -83,17 +90,29 @@ class DnsFailureTest {
   }
 
   /**
-   * A resolver that answers with an HTTP error is not a name that failed to resolve.
+   * A resolver that answers with an HTTP error is a name that failed to resolve, as far as the
+   * type goes — and the reason survives only in the cause.
    *
-   * This is the finding worth having from this suite. A rate-limited or broken DoH endpoint
-   * raises a plain `IOException` — `response: 429 Too Many Requests` — and **not** an
-   * `UnknownHostException`, so a caller catching the latter to mean "bad name" will not catch it,
-   * and one catching it to decide whether to retry will make the opposite decision from the
-   * correct one. Recorded here rather than argued about: the assertion is only that the two are
-   * not conflated.
+   * This is the finding worth having from this suite, and it is not the one you would guess. A
+   * rate-limited or broken DoH endpoint is nothing to do with the *name* being looked up, but
+   * `Dns.lookup` declares `UnknownHostException` and nothing else, so `DnsOverHttps` wraps: the
+   * caller gets `UnknownHostException` whose message is the bare hostname, with the real
+   * `IOException("response: 429 …")` as its cause.
+   *
+   * That is the platform's convention rather than an OkHttp quirk — `InetAddress.getAllByName`
+   * flattens every `getaddrinfo` error, `EAI_AGAIN` (retry) and `EAI_NONAME` (do not) alike, into
+   * the one exception, and Java 18's `InetAddressResolver` SPI kept the same signature. Android's
+   * `DnsResolver` is the only mainstream API that does not flatten, and it buys that by not being
+   * `InetAddress`-shaped: an async callback delivering `DnsException(code, cause)`, plus a
+   * `rawQuery` that hands back the response bytes so the caller can read the rcode itself.
+   *
+   * So the hazard is real but it is not a type the caller can catch: code that catches
+   * `UnknownHostException` to decide whether to retry cannot tell "this name does not exist" from
+   * "the resolver is rate-limiting me" without walking `cause`. Asserted here as the cause chain,
+   * because that is the only place the difference exists.
    */
   @Test
-  fun aResolverHttpErrorIsNotAnUnknownHost() {
+  fun aResolverHttpErrorArrivesAsAnUnknownHost() {
     assumeAvailable(Endpoint.TESTSERVER_HOST)
 
     // A DoH URL that answers every query with 429. Nothing about the *name* being looked up is
@@ -114,10 +133,15 @@ class DnsFailureTest {
         e
       }
 
-    assertThat(failure, name = "a 429 from the resolver").isInstanceOf(IOException::class)
-    if (failure is UnknownHostException) {
-      throw AssertionError("a 429 from the resolver arrived as UnknownHostException: ${failure.message}")
-    }
+    assertThat(failure, name = "a 429 from the resolver").isInstanceOf(UnknownHostException::class)
+
+    // The half that is worth keeping. `DnsOverHttps.throwBestFailure` calls `initCause` with the
+    // first HTTP failure, so this is where the status code lives; the surface message is the
+    // hostname and says nothing about HTTP at all. Asserted on the status rather than the whole
+    // string, which carries the reason phrase the server chose.
+    val cause = failure.cause
+    assertThat(cause, name = "the cause of a 429").isNotNull().isInstanceOf(IOException::class)
+    assertThat(cause?.message, name = "the cause's detail").isNotNull().contains("429")
   }
 
   /**

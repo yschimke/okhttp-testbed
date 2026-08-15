@@ -69,9 +69,11 @@ object DohMatrixReport {
      * The resolver answered with an HTTP error rather than with DNS.
      *
      * Not the same as a name that failed to resolve, and worth its own column: a validating
-     * resolver that turns SERVFAIL into `502` reaches a caller as a plain `IOException`, so code
-     * catching `UnknownHostException` to mean "bad name" never sees it. `DnsFailureTest` asserts
-     * that distinction; this records which resolvers actually behave this way.
+     * resolver that turns SERVFAIL into `502` is the resolver failing rather than the name. It
+     * does not *reach* a caller as anything distinguishable, though — `Dns.lookup` declares
+     * `UnknownHostException` and OkHttp wraps the HTTP failure in one — so code catching that to
+     * mean "bad name" mishandles it, and only the cause says otherwise. `DnsFailureTest` asserts
+     * that shape; this records which resolvers actually behave this way.
      */
     ERRORED,
 
