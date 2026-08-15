@@ -78,10 +78,10 @@ tasks.withType<Test>().configureEach {
 // virtual thread pins its carrier, which today it does — Http2Connection.newStream holds
 // a monitor across Http2Writer.flush's blocking write. That is a true finding about the
 // published artifact on JDK 21 (JEP 491 removes the pinning on 24+), not a broken test,
-// so the assertion stands as written and the result is recorded in the JUnit XML. It
-// just doesn't fail the build: a finding about OkHttp shouldn't read as this repo being
-// broken. Every other suite stays fatal, which is what caught the MockServer version
-// mismatch.
+// so the assertion stands as written and the result is recorded in the JUnit XML. The
+// status collector classifies that predicted failure as expected only before JDK 24, and
+// this task doesn't fail the build. Every other suite stays fatal, which is what caught
+// the MockServer version mismatch.
 val loomTestPattern = "**/BasicLoomTest.class"
 
 // HostileRetryTest asks how many times OkHttp sends a request the server killed under it. The

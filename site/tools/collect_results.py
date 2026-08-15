@@ -103,8 +103,8 @@ def severity_of(suite_name: str) -> str:
 # Failures that are the point rather than the problem.
 #
 # A suite here is asking a question whose answer is currently "no", and saying so is why it
-# exists — EchTest reports that OkHttp can't do ECH on the JVM, and a green EchTest would mean
-# the finding had been lost, not that the bug was fixed. Those failures are shown, and shown in
+# exists — EchTest reports that OkHttp can't do ECH on the JVM, and BasicLoomTest reports the
+# monitor pinning that JEP 491 fixes only from JDK 24. Those failures are shown, and shown in
 # amber, but folded away: the page's red is reserved for a result nobody predicted.
 #
 # The reason is required, and is what the page shows instead of a stack trace. Cases are named
@@ -169,8 +169,21 @@ def normalise_case(name: str) -> str:
     return " ".join(name.split())
 
 
-def expected_reason(suite_name: str, case_name: str) -> str:
+def expected_reason(
+    suite_name: str,
+    case_name: str,
+    platform: str,
+    variant: str,
+) -> str:
     """Why this case failing is the expected answer, or empty if it isn't."""
+    if suite_name == "BasicLoomTest" and case_name == "testHttpsRequest":
+        jdk = re.search(r"\bJDK (\d+)", f"{variant} {platform}")
+        if jdk and 21 <= int(jdk.group(1)) < 24:
+            return (
+                "Before JDK 24, Http2Connection.newStream holds intrinsic monitors across "
+                "Http2Writer.flush's blocking write, which pins the virtual thread's carrier. "
+                "JEP 491 removes this monitor-based pinning from JDK 24."
+            )
     return EXPECTED_FAILURES.get(suite_name, {}).get(case_name, "")
 
 
@@ -224,7 +237,11 @@ def parse_suite(
 
         raw_name = case.get("name", "")
         case_name = normalise_case(raw_name)
-        reason = expected_reason(simple_name, case_name) if status == "failed" else ""
+        reason = (
+            expected_reason(simple_name, case_name, platform, variant)
+            if status == "failed"
+            else ""
+        )
         if reason:
             status = "expected"
 

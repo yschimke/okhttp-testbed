@@ -762,7 +762,7 @@ regression hides. The status page separates three things a non-gating failure ca
 
 | | shown as | means |
 |---|---|---|
-| **expected** | amber, folded shut | The repository predicted this and can say why. `EchTest`'s `JDK` cases can't pass until a Conscrypt carrying the ECH API is released — that *is* the finding, so it is recorded with its reason and kept quiet. Declared per case in `site/tools/collect_results.py`. |
+| **expected** | amber, folded shut | The repository predicted this and can say why. Examples include `EchTest`'s JVM limitation and `BasicLoomTest`'s monitor pinning before JDK 24 — those are the findings, so they are recorded with reasons and kept quiet. Declared per case in `site/tools/collect_results.py`. |
 | **unexpected, critical** | red | A surprise in a suite whose question the repository is currently trying to answer. The ECH suites are critical today; move one back to `watch` when its question is settled. |
 | **unexpected, watch** | amber | A surprise in a suite being kept honest, where a server nobody here operates is as likely a cause as the client. |
 
