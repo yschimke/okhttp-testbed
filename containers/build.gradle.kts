@@ -117,6 +117,10 @@ val testJavaVersion =
 val mockServerRuns = testJavaVersion >= 17
 
 tasks.test {
+  val tlsPolicy = layout.buildDirectory.file("test-results/tlspolicy-test.json")
+  systemProperty("testbed.tlspolicy.report", tlsPolicy.get().asFile.absolutePath)
+  outputs.file(tlsPolicy)
+
   exclude(loomTestPattern, hostileTestPattern)
   if (!mockServerRuns) {
     exclude(mockServerTestPattern)

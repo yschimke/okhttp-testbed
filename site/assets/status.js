@@ -512,8 +512,9 @@ function renderTlsPolicy(snapshot) {
     return;
   }
 
-  // Union of the questions asked, so a check added later gets a column without this being edited.
-  const questions = [...new Set(rows.flatMap(({ record }) => Object.keys(record.checks || {})))];
+  // These are the contract of this table, not an accident of which test happened to finish
+  // first. Keeping the columns fixed also leaves a visible dash when one probe was unavailable.
+  const questions = ["Revocation", "Pinning", "Certificate Transparency"];
 
   table.replaceChildren(
     el(

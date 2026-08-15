@@ -517,12 +517,19 @@ def group_by_version(artifacts: list[dict]) -> list[dict]:
         # What the origin offered is the origin's, but what was negotiated is the version's.
         if artifact["altSvc"] and not version.get("altSvc"):
             version["altSvc"] = artifact["altSvc"]
-        # Kept per platform rather than first-wins: revocation and CT answers differ by JDK and by
-        # Android release, and that difference is the entire point of recording them.
+        # Kept per platform rather than first-wins: the public and controlled-fixture suites each
+        # contribute checks, while revocation and CT answers differ by JDK and Android release.
+        # Merge only exact platform identities; that difference is the point of recording them.
         if artifact["tlsPolicy"]:
-            version["tlsPolicy"].append(
-                {"platform": artifact["platform"] or "unknown", **artifact["tlsPolicy"]}
+            platform = artifact["platform"] or "unknown"
+            existing = next(
+                (record for record in version["tlsPolicy"] if record["platform"] == platform),
+                None,
             )
+            if existing:
+                existing.setdefault("checks", {}).update(artifact["tlsPolicy"].get("checks", {}))
+            else:
+                version["tlsPolicy"].append({"platform": platform, **artifact["tlsPolicy"]})
         version["echResults"].extend(artifact["echResults"])
 
     for version in versions.values():
