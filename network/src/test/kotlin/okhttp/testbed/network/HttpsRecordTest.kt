@@ -134,7 +134,9 @@ class HttpsRecordTest {
         ).build()
 
     pinned
-      .newCall(Request.Builder().url("https://${Endpoint.CLOUDFLARE_WWW.server}/robots.txt").build())
+      // Unlike /robots.txt, this stays on cloudflare.com. Following its redirect to
+      // www.cloudflare.com would incorrectly reuse cloudflare.com's address hint for a new host.
+      .newCall(Request.Builder().url("https://${Endpoint.CLOUDFLARE_WWW.server}/cdn-cgi/trace").build())
       .execute()
       .use { response ->
         assertThat(response.code, name = "reached ${hint.hostAddress}").isEqualTo(200)
