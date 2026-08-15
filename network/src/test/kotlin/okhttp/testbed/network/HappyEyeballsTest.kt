@@ -18,9 +18,15 @@ package okhttp.testbed.network
 import assertk.assertThat
 import assertk.assertions.isEqualTo
 import assertk.assertions.isLessThan
+import assertk.assertions.isTrue
 import java.io.IOException
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.Proxy
+import java.net.Socket
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.time.Duration
 import okhttp3.Dns
 import okhttp3.OkHttpClient
@@ -60,7 +66,7 @@ class HappyEyeballsTest {
       OkHttpClient
         .Builder()
         .proxy(Proxy.NO_PROXY)
-        .dns(pinned(BLACKHOLE, reachable.hostAddress.orEmpty()))
+        .dns(pinned(InetAddress.getByName(BLACKHOLE), reachable))
         .connectTimeout(CONNECT_TIMEOUT)
         .build()
 
@@ -92,7 +98,7 @@ class HappyEyeballsTest {
       OkHttpClient
         .Builder()
         .proxy(Proxy.NO_PROXY)
-        .dns(pinned(BLACKHOLE, BLACKHOLE_TWO))
+        .dns(pinned(InetAddress.getByName(BLACKHOLE), InetAddress.getByName(BLACKHOLE_TWO)))
         .connectTimeout(CONNECT_TIMEOUT)
         .build()
 
@@ -108,13 +114,16 @@ class HappyEyeballsTest {
       }
     val elapsed = Duration.ofNanos(System.nanoTime() - started)
 
-    assertThat(failure.javaClass.simpleName, name = "failure kind").isEqualTo("ConnectException")
+    assertThat(
+      failure is SocketException || failure is SocketTimeoutException,
+      name = "failure is a connection failure (${failure.javaClass.simpleName})",
+    ).isTrue()
 
     // Whether the timeout covers the race or each address in turn is the question. Two addresses
-    // inside a budget of one timeout says the race is bounded as a whole; the generous margin is
-    // there because a network that refuses immediately gets here far sooner and both answers are
-    // acceptable — what is not acceptable is two timeouts back to back.
-    assertThat(elapsed, name = "time to give up on two addresses").isLessThan(CONNECT_TIMEOUT.multipliedBy(2))
+    // inside a budget of one timeout says the race is bounded as a whole. The second connection
+    // starts after the fast-fallback delay, so leave a small scheduling margin around that one
+    // shared budget. What is not acceptable is two timeouts back to back.
+    assertThat(elapsed, name = "time to give up on two addresses").isLessThan(CONNECT_TIMEOUT.plus(RACE_MARGIN))
   }
 
   /**
@@ -124,8 +133,9 @@ class HappyEyeballsTest {
    * that cannot work has to be raced past rather than picked and waited on.
    */
   @Test
-  fun aDualStackNameConnectsOnASingleStackNetwork() {
+  fun aDualStackNameConnectsWithoutIpv6() {
     assumeAvailable(Endpoint.TEST_IPV6)
+    assumeTrue(!hasIpv6()) { "this runner has IPv6; the v4-only case cannot be tested here" }
 
     OkHttpClient
       .Builder()
@@ -140,33 +150,77 @@ class HappyEyeballsTest {
   }
 
   /**
-   * A v6-only name where there is no v6.
+   * The other half of the dual-stack check, where IPv6 really is available.
    *
-   * Skipped rather than asserted where IPv6 is absent, which is every GitHub-hosted runner: the
-   * interesting behaviour — a prompt failure rather than a timeout — cannot be told apart from
-   * "the network has no route" without a v6 network to compare against. Recorded as a skip so the
-   * gap is visible on the status page instead of being silently absent.
+   * Pinning the AAAA answers prevents a working v4 route from making this pass. GitHub-hosted
+   * runners skip here because they have no IPv6 route; a dual-stack or v6-only runner must make
+   * the request over v6.
+   *
+   * This uses the dual-stack name, rather than the v6-only name below, so both halves exercise the
+   * same DNS identity and differ only in the usable address family.
    */
   @Test
-  fun aV6OnlyNameFailsPromptlyWithoutV6() {
-    assumeTrue(hasIpv6()) { "this runner has no IPv6, so a v6-only name says nothing about racing" }
+  fun aDualStackNameConnectsUsingIpv6() {
     assumeAvailable(Endpoint.TEST_IPV6)
+    assumeTrue(hasIpv6()) { "this runner has no working IPv6 route" }
+
+    val ipv6Addresses = Dns.SYSTEM.lookup(DUAL_STACK).filter { it.address.size == 16 }
+    assumeTrue(ipv6Addresses.isNotEmpty()) { "$DUAL_STACK returned no AAAA addresses" }
 
     OkHttpClient
       .Builder()
       .proxy(Proxy.NO_PROXY)
+      .dns(pinned(*ipv6Addresses.toTypedArray()))
       .connectTimeout(CONNECT_TIMEOUT)
       .build()
-      .newCall(Request.Builder().url("https://$V6_ONLY/").build())
+      .newCall(Request.Builder().url("https://$DUAL_STACK/").build())
       .execute()
       .use { response ->
-        assertThat(response.code, name = "$V6_ONLY with IPv6 available").isEqualTo(200)
+        assertThat(response.code, name = "$DUAL_STACK over IPv6").isEqualTo(200)
       }
   }
 
-  private fun pinned(vararg addresses: String) =
+  /**
+   * A v6-only name fails promptly on a runner without v6.
+   *
+   * Depending on where the absence is discovered this is either an `UnknownHostException` or a
+   * socket connection failure such as `ConnectException`/`NoRouteToHostException`. It must not
+   * consume the full connection timeout: there is no alternative address to wait for.
+   */
+  @Test
+  fun aV6OnlyNameFailsPromptlyWithoutV6() {
+    assumeAvailable(Endpoint.TEST_IPV6)
+    assumeTrue(!hasIpv6()) { "this runner has working IPv6; the no-v6 failure cannot be tested here" }
+
+    val client =
+      OkHttpClient
+        .Builder()
+        .proxy(Proxy.NO_PROXY)
+        .connectTimeout(CONNECT_TIMEOUT)
+        .build()
+
+    val started = System.nanoTime()
+    val failure =
+      try {
+        client
+          .newCall(Request.Builder().url("https://$V6_ONLY/").build())
+          .execute()
+          .use { throw AssertionError("connected to $V6_ONLY without a working IPv6 route: HTTP ${it.code}") }
+      } catch (e: IOException) {
+        e
+      }
+    val elapsed = Duration.ofNanos(System.nanoTime() - started)
+
+    assertThat(
+      failure is UnknownHostException || failure is SocketException,
+      name = "failure kind (${failure.javaClass.simpleName})",
+    ).isTrue()
+    assertThat(elapsed, name = "time to reject a v6-only name without v6").isLessThan(CONNECT_TIMEOUT)
+  }
+
+  private fun pinned(vararg addresses: InetAddress) =
     object : Dns {
-      override fun lookup(hostname: String): List<InetAddress> = addresses.map(InetAddress::getByName)
+      override fun lookup(hostname: String): List<InetAddress> = addresses.toList()
     }
 
   private fun addressFor(hostname: String): InetAddress {
@@ -175,10 +229,14 @@ class HappyEyeballsTest {
     return addresses.firstOrNull { it.address.size == 4 } ?: addresses.first()
   }
 
-  /** Whether this machine has a routable v6 address at all, rather than whether a name has one. */
+  /** Whether this machine can actually route v6, rather than whether DNS returned an AAAA. */
   private fun hasIpv6(): Boolean =
     try {
-      Dns.SYSTEM.lookup(Endpoint.GOOGLE.server).any { it.address.size == 16 }
+      val address = Dns.SYSTEM.lookup(V6_ONLY).firstOrNull { it.address.size == 16 } ?: return false
+      Socket().use { socket ->
+        socket.connect(InetSocketAddress(address, 443), IPV6_PROBE_TIMEOUT.toMillis().toInt())
+      }
+      true
     } catch (e: IOException) {
       false
     }
@@ -197,5 +255,7 @@ class HappyEyeballsTest {
     const val V6_ONLY = "ipv6.test-ipv6.com"
 
     val CONNECT_TIMEOUT: Duration = Duration.ofSeconds(10)
+    val IPV6_PROBE_TIMEOUT: Duration = Duration.ofSeconds(2)
+    val RACE_MARGIN: Duration = Duration.ofSeconds(2)
   }
 }
