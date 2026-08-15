@@ -713,6 +713,14 @@ and the class name rather than recorded, so a new suite is linked the day it lan
 is that moving a module without updating `SOURCE_ROOTS` in `site/assets/status.js` gives a
 404 rather than a missing link.
 
+Failures also link into the relevant topic page, down to the exact suite result where that page
+has suite-level evidence. Repeated failures are folded into likely-related groups using a weighted
+score: test class 25%, test method 15%, exception type 15%, message-token similarity 20%, and
+stack-frame similarity 25%. Every result in a group must score at least 65% against every other
+member, which prevents a chain of weak matches from swallowing unrelated failures. The page shows
+the score range and the per-result evidence; the pure scorer and its tests live in
+`site/assets/finding-groups.js` and `site/assets/finding-groups.test.js`.
+
 Three distinctions the page depends on, all decided when the results are collected:
 
 - The Gradle task a suite ran under decides whether a failure is **failing** or a

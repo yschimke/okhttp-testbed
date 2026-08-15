@@ -205,46 +205,94 @@ function renderFailures(snapshot) {
           : suite.reporting && suite.severity !== "critical" ? "finding"
           : "failed";
 
-        const source = sourceUrl(suite);
-        // Open, because the assertion is the reason to come back to this page — a triangle to
-        // click before you can read it is one more step for the thing you came for. Skips are
-        // the exception: the reason is one line, and the Endpoints table already carries it.
-        // Open, because the assertion is the reason to come back to this page. Two exceptions,
-        // both cases where the one line that matters is already in the summary: a skip, and a
-        // failure that was predicted — those are folded so the unpredicted ones stand out.
-        const detail = el("details", {
-          className: "finding-detail",
-          open: kind !== "skipped" && kind !== "expected",
-        }, [
-          el("summary", {}, [
-            pill(kind),
-            ` ${suite.name}.${testCase.name} — ${version.okhttpVersion}`,
-          ]),
-          // The trace usually opens with the message verbatim, so printing both repeats the
-          // one line that matters. Show the message alone only when it isn't already there.
-          testCase.expectedReason
-            ? el("p", { className: "expected-reason", textContent: testCase.expectedReason })
-            : null,
-          el("pre", {
-            textContent:
-              (testCase.detail?.startsWith(testCase.message)
-                ? testCase.detail
-                : [testCase.message, testCase.detail].filter(Boolean).join("\n\n")) ||
-              "No detail recorded.",
-          }),
-          source
-            ? el("p", { className: "card-label" }, [
-                el("a", { href: source, textContent: `${suite.className} ↗` }),
-              ])
-            : null,
-        ]);
-        detail.dataset.kind = kind;
-        items.push({ kind, detail });
+        items.push({ kind, version, suite, testCase });
       }
     }
   }
 
   items.sort((a, b) => rank[a.kind] - rank[b.kind]);
+
+  function findingDetail(item, match = null, open = false) {
+    const { kind, version, suite, testCase } = item;
+    const source = sourceUrl(suite);
+    const topic = FindingGroups.topicFor(item);
+    const why = match && match.score < 100
+      ? [
+          `${match.score}% match`,
+          match.components.testClass === 1 ? "same class" : null,
+          match.components.testMethod === 1 ? "same method" : null,
+          match.components.exception === 1 ? "same exception" : null,
+          match.components.message ? `${Math.round(match.components.message * 100)}% message` : null,
+          match.components.stacktrace ? `${Math.round(match.components.stacktrace * 100)}% stack` : null,
+        ].filter(Boolean).join(" · ")
+      : "";
+    const detail = el("details", { className: "finding-detail", open }, [
+      el("summary", {}, [
+        pill(kind),
+        ` ${suite.name}.${testCase.name} — ${version.okhttpVersion}`,
+      ]),
+      why ? el("p", { className: "similarity-note", textContent: why }) : null,
+      testCase.expectedReason
+        ? el("p", { className: "expected-reason", textContent: testCase.expectedReason })
+        : null,
+      el("pre", {
+        textContent:
+          (testCase.detail?.startsWith(testCase.message)
+            ? testCase.detail
+            : [testCase.message, testCase.detail].filter(Boolean).join("\n\n")) ||
+          "No detail recorded.",
+      }),
+      source || topic
+        ? el("p", { className: "finding-links card-label" }, [
+            topic ? el("a", { href: topic.href, textContent: `${topic.label} details →` }) : null,
+            source ? el("a", { href: source, textContent: `${suite.className} ↗` }) : null,
+          ])
+        : null,
+    ]);
+    detail.dataset.kind = kind;
+    return detail;
+  }
+
+  const groups = FindingGroups.cluster(items).sort((a, b) =>
+    Math.min(...a.items.map((item) => rank[item.kind])) -
+    Math.min(...b.items.map((item) => rank[item.kind])),
+  );
+
+  const rendered = groups.map((group) => {
+    if (group.items.length === 1) {
+      const item = group.items[0];
+      return findingDetail(item, null, item.kind !== "skipped" && item.kind !== "expected");
+    }
+
+    const representative = group.representative;
+    const strongestKind = group.items.map((item) => item.kind)
+      .sort((a, b) => rank[a] - rank[b])[0];
+    const scores = group.items
+      .filter((item) => item !== representative)
+      .map((item) => group.matches.get(item).score);
+    const message = (representative.testCase.message || FindingGroups.exceptionName(representative) ||
+      `${representative.suite.name}.${representative.testCase.name}`).split("\n")[0];
+    const shortMessage = message.length > 135 ? `${message.slice(0, 132)}…` : message;
+    const range = scores.length
+      ? `${Math.min(...scores)}${Math.min(...scores) === Math.max(...scores) ? "" : `–${Math.max(...scores)}`}% match`
+      : "";
+    const topic = FindingGroups.topicFor(representative);
+
+    const incident = el("details", { className: "incident-group" }, [
+      el("summary", {}, [
+        pill(strongestKind),
+        el("strong", { textContent: `${plural(group.items.length, "result")} likely related` }),
+        el("span", { className: "incident-message", textContent: shortMessage }),
+      ]),
+      el("div", { className: "incident-meta" }, [
+        el("span", { textContent: `${range} · weighted by test class, method, exception, message and stack trace` }),
+        topic ? el("a", { href: topic.href, textContent: `${topic.label} details →` }) : null,
+      ]),
+      ...group.items.map((item) => findingDetail(item, group.matches.get(item))),
+    ]);
+    incident.dataset.kind = strongestKind;
+    return incident;
+  });
 
   const body = document.getElementById("failure-list");
   if (!items.length) {
@@ -252,7 +300,7 @@ function renderFailures(snapshot) {
       el("p", { textContent: "Everything ran, and everything passed." }),
     );
   } else {
-    body.replaceChildren(...items.map((item) => item.detail));
+    body.replaceChildren(...rendered);
   }
 }
 
