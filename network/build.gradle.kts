@@ -129,6 +129,11 @@ fun Test.reportEndpointsTo(task: String) {
   val tlsPolicy = layout.buildDirectory.file("test-results/tlspolicy-$task.json")
   systemProperty("testbed.tlspolicy.report", tlsPolicy.get().asFile.absolutePath)
   outputs.file(tlsPolicy)
+
+  // The ECHConfigList used for each attempt, including a server-provided retry config.
+  val echResults = layout.buildDirectory.file("test-results/ech-$task.json")
+  systemProperty("testbed.ech.report", echResults.get().asFile.absolutePath)
+  outputs.file(echResults)
 }
 
 val networkTest =

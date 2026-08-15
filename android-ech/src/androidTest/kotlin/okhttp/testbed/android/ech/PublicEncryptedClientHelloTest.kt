@@ -84,6 +84,7 @@ class PublicEncryptedClientHelloTest {
   fun cloudflareUsesEch() {
     val call = client.newCall(Request("https://cloudflare-ech.com/cdn-cgi/trace".toHttpUrl()))
     call.execute().use { response ->
+      record(call, "cloudflareUsesEch", "cloudflare-ech.com")
       assertThat(call.routeList.routes.single().echConfigList).isNotNull()
 
       val body = response.body.string()
@@ -95,6 +96,7 @@ class PublicEncryptedClientHelloTest {
   fun echIsAcceptedOnTlsEchDev() {
     val call = client.newCall(Request("https://tls-ech.dev/".toHttpUrl()))
     call.execute().use { response ->
+      record(call, "echIsAcceptedOnTlsEchDev", "tls-ech.dev")
       assertThat(call.routeList.routes.single().echConfigList).isNotNull()
 
       val body = response.body.string()
@@ -110,6 +112,7 @@ class PublicEncryptedClientHelloTest {
   fun echIsRetriedOnStaleTlsEchDev() {
     val call = client.newCall(Request("https://stale.tls-ech.dev/".toHttpUrl()))
     call.execute().use { response ->
+      record(call, "echIsRetriedOnStaleTlsEchDev", "stale.tls-ech.dev")
       val routes = call.routeList.routes
       assertThat(routes).hasSize(2)
       assertThat(routes[0].echConfigList).isNotNull()
@@ -141,6 +144,7 @@ class PublicEncryptedClientHelloTest {
 
     val call = client.newCall(Request("https://wrong.tls-ech.dev/".toHttpUrl()))
     call.execute().use { response ->
+      record(call, "echIsAcceptedOnWrongTlsEchDev", "wrong.tls-ech.dev")
       assertThat(call.routeList.routes.single().echConfigList).isNotNull()
 
       assertThat(response.code).isEqualTo(302)
@@ -155,6 +159,7 @@ class PublicEncryptedClientHelloTest {
   fun tlsIsNotUsedOnTls12TlsEchDev() {
     val call = client.newCall(Request("https://tls12.tls-ech.dev/".toHttpUrl()))
     call.execute().use { response ->
+      record(call, "tlsIsNotUsedOnTls12TlsEchDev", "tls12.tls-ech.dev")
       val routes = call.routeList.routes
       assertThat(routes).hasSize(2)
       assertThat(routes[0].echConfigList).isNotNull()
@@ -171,11 +176,34 @@ class PublicEncryptedClientHelloTest {
   fun echIsAcceptedOnDefoIe() {
     val call = client.newCall(Request("https://defo.ie/ech-check.php".toHttpUrl()))
     call.execute().use { response ->
+      record(call, "echIsAcceptedOnDefoIe", "defo.ie")
       assertThat(call.routeList.routes.single().echConfigList).isNotNull()
 
       val body = response.body.string()
       assertThat(body).contains("SSL_ECH_STATUS: success")
     }
+  }
+
+  private fun record(
+    call: Call,
+    case: String,
+    server: String,
+  ) {
+    EchResultReport.record(
+      suite = "PublicEncryptedClientHelloTest",
+      case = case,
+      server = server,
+      attempts =
+        call.routeList.routes.mapIndexed { index, route ->
+          val source =
+            when {
+              index == 0 -> "dns"
+              route.echConfigList != null -> "retry"
+              else -> "fallback"
+            }
+          EchResultReport.Attempt(source, route.echConfigList?.toByteArray())
+        },
+    )
   }
 }
 

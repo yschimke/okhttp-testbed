@@ -146,5 +146,6 @@ jobs:
           path: |
             android-ech/build/run-metadata.json
             android-ech/build/outputs/androidTest-results/connected*/**/*.xml
+            android-ech/build/test-results/ech-*.json
             android-ech/build/reports/androidTests/connected/
           retention-days: 30

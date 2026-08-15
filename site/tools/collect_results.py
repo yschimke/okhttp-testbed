@@ -23,6 +23,7 @@ rather than by JUnit — what it found reachable, and what its handshake offered
     <artifacts>/network-test-results-pinned/doh-matrix-networkTest.json
     <artifacts>/network-test-results-pinned/altsvc-networkTest.json
     <artifacts>/network-test-results-pinned/tlspolicy-networkTest.json
+    <artifacts>/network-test-results-pinned/ech-echTest.json
 
 Output is two files:
 
@@ -377,6 +378,32 @@ def parse_tls_policy(directory: pathlib.Path) -> dict | None:
     return None
 
 
+def parse_ech_results(directory: pathlib.Path, platform: str, variant: str) -> list[dict]:
+    """Read ECHConfigLists captured during connection attempts.
+
+    Android writes one file per instrumentation suite and the JVM writes one per Gradle task,
+    so all readable files are merged. Platform and variant come from run metadata rather than
+    from test code; that keeps an emulator/JDK image change visible without changing the suite.
+    """
+    observations = []
+    for report in sorted(directory.rglob("ech-*.json")):
+        try:
+            parsed = json.loads(report.read_text())
+        except json.JSONDecodeError as e:
+            print(f"skipping unreadable {report}: {e}", file=sys.stderr)
+            continue
+        for observation in parsed.get("observations", []):
+            observations.append(
+                {
+                    **observation,
+                    "platformDescription": platform,
+                    "variant": variant,
+                    "task": parsed.get("task", ""),
+                }
+            )
+    return observations
+
+
 def suite_status(suite: dict) -> str:
     if suite["failed"]:
         # Red for a suite that gates, and for one this repository is currently about. Amber for
@@ -451,6 +478,7 @@ def parse_artifact(directory: pathlib.Path) -> dict | None:
         "dohMatrix": parse_doh_matrix(directory),
         "altSvc": parse_alt_svc(directory),
         "tlsPolicy": parse_tls_policy(directory),
+        "echResults": parse_ech_results(directory, platform, variant),
     }
 
 
@@ -470,6 +498,7 @@ def group_by_version(artifacts: list[dict]) -> list[dict]:
                 "dohMatrix": None,
                 "altSvc": None,
                 "tlsPolicy": [],
+                "echResults": [],
             },
         )
         if artifact["workflow"] not in version["workflows"]:
@@ -494,6 +523,7 @@ def group_by_version(artifacts: list[dict]) -> list[dict]:
             version["tlsPolicy"].append(
                 {"platform": artifact["platform"] or "unknown", **artifact["tlsPolicy"]}
             )
+        version["echResults"].extend(artifact["echResults"])
 
     for version in versions.values():
         suites = version["suites"]

@@ -28,9 +28,13 @@ import java.security.cert.CertificateFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
+import okhttp3.Call
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
+import okhttp3.Route
 import okhttp3.dnsoverhttps.DnsOverHttps
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
@@ -64,26 +68,51 @@ class EncryptedClientHelloTest {
 
   @Test
   fun greenPathAcceptsEncryptedClientHello() {
-    val response = fixture().get(GREEN_NAME)
+    val result = fixture().get(GREEN_NAME)
+    record("greenPathAcceptsEncryptedClientHello", GREEN_NAME, result.routes)
 
-    assertThat(response).contains("\"echAccepted\":$echSupported")
-    assertThat(response).contains("\"serverName\":\"$GREEN_NAME\"")
+    assertThat(result.body).contains("\"echAccepted\":$echSupported")
+    assertThat(result.body).contains("\"serverName\":\"$GREEN_NAME\"")
   }
 
   @Test
   fun rejectedConfigIsRetriedWithServerConfig() {
-    val response = fixture().get(RETRY_NAME)
+    val result = fixture().get(RETRY_NAME)
+    record("rejectedConfigIsRetriedWithServerConfig", RETRY_NAME, result.routes)
 
-    assertThat(response).contains("\"echAccepted\":$echSupported")
-    assertThat(response).contains("\"serverName\":\"$RETRY_NAME\"")
+    assertThat(result.body).contains("\"echAccepted\":$echSupported")
+    assertThat(result.body).contains("\"serverName\":\"$RETRY_NAME\"")
   }
 
   @Test
   fun rejectedConfigWithoutServerConfigIsRetriedWithoutEch() {
-    val response = fixture().get(DISABLED_NAME)
+    val result = fixture().get(DISABLED_NAME)
+    record("rejectedConfigWithoutServerConfigIsRetriedWithoutEch", DISABLED_NAME, result.routes)
 
-    assertThat(response).contains("\"echAccepted\":false")
-    assertThat(response).contains("\"serverName\":\"$DISABLED_NAME\"")
+    assertThat(result.body).contains("\"echAccepted\":false")
+    assertThat(result.body).contains("\"serverName\":\"$DISABLED_NAME\"")
+  }
+
+  private fun record(
+    case: String,
+    server: String,
+    routes: List<Route>,
+  ) {
+    EchResultReport.record(
+      suite = "EncryptedClientHelloTest",
+      case = case,
+      server = server,
+      attempts =
+        routes.mapIndexed { index, route ->
+          val source =
+            when {
+              index == 0 -> "dns"
+              route.echConfigList != null -> "retry"
+              else -> "fallback"
+            }
+          EchResultReport.Attempt(source, route.echConfigList?.toByteArray())
+        },
+    )
   }
 
   private fun fixture(): Fixture {
@@ -124,17 +153,21 @@ class EncryptedClientHelloTest {
           .resolvePrivateAddresses(true)
           .post(true)
           .build()
-      client = bootstrapClient.newBuilder().dns(dns).build()
+      client =
+        bootstrapClient
+          .newBuilder()
+          .dns(dns)
+          .addNetworkInterceptor(FixtureRouteTagger)
+          .build()
     }
 
-    fun get(hostname: String): String =
-      client
-        .newCall(Request("https://$hostname/".toHttpUrl()))
-        .execute()
-        .use { response ->
-          assertThat(response.code).isEqualTo(200)
-          response.body.string()
-        }
+    fun get(hostname: String): FixtureResult {
+      val call = client.newCall(Request("https://$hostname/".toHttpUrl()))
+      return call.execute().use { response ->
+        assertThat(response.code).isEqualTo(200)
+        FixtureResult(response.body.string(), call.fixtureRoutes.routes.toList())
+      }
+    }
   }
 
   private companion object {
@@ -165,4 +198,23 @@ class EncryptedClientHelloTest {
     private const val RETRY_NAME = "retry.secret.test"
     private const val DISABLED_NAME = "disabled.secret.test"
   }
+}
+
+private data class FixtureResult(
+  val body: String,
+  val routes: List<Route>,
+)
+
+private object FixtureRouteTagger : Interceptor {
+  override fun intercept(chain: Interceptor.Chain): Response {
+    chain.call().fixtureRoutes.routes += chain.connection()!!.route()
+    return chain.proceed(chain.request())
+  }
+}
+
+private val Call.fixtureRoutes: FixtureRoutes
+  get() = tag(FixtureRoutes::class) { FixtureRoutes() }
+
+private class FixtureRoutes {
+  val routes = mutableListOf<Route>()
 }

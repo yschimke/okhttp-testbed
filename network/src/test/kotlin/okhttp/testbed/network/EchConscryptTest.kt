@@ -97,6 +97,7 @@ class EchConscryptTest {
   @RequiresEndpoint(Endpoint.CLOUDFLARE_ECH)
   fun cloudflareAcceptsAnEncryptedClientHello() {
     val body = get("https://cloudflare-ech.com/cdn-cgi/trace")
+    record("cloudflareAcceptsAnEncryptedClientHello", "cloudflare-ech.com")
 
     assertThat(socketFactory.encryptedHostnames).contains("cloudflare-ech.com")
     assertThat(body).contains("sni=encrypted")
@@ -106,6 +107,7 @@ class EchConscryptTest {
   @RequiresEndpoint(Endpoint.TLS_ECH_DEV)
   fun tlsEchDevAcceptsAnEncryptedClientHello() {
     val body = get("https://tls-ech.dev/")
+    record("tlsEchDevAcceptsAnEncryptedClientHello", "tls-ech.dev")
 
     assertThat(socketFactory.encryptedHostnames).contains("tls-ech.dev")
 
@@ -119,6 +121,7 @@ class EchConscryptTest {
   @RequiresEndpoint(Endpoint.DEFO_IE)
   fun defoIeAcceptsAnEncryptedClientHello() {
     val body = get("https://defo.ie/ech-check.php")
+    record("defoIeAcceptsAnEncryptedClientHello", "defo.ie")
 
     assertThat(socketFactory.encryptedHostnames).contains("defo.ie")
     assertThat(body).contains("SSL_ECH_STATUS: success")
@@ -132,6 +135,7 @@ class EchConscryptTest {
   @RequiresEndpoint(Endpoint.TLS_ECH_DEV)
   fun tls12IsReachedWithoutEch() {
     val body = get("https://tls12.tls-ech.dev/")
+    record("tls12IsReachedWithoutEch", "tls12.tls-ech.dev")
 
     assertThat(body).contains("<h1>tls12.tls-ech.dev</h1>")
     assertThat(body).contains("You are not using ECH")
@@ -146,10 +150,24 @@ class EchConscryptTest {
   @RequiresEndpoint(Endpoint.CLOUDFLARE_ECH)
   fun okHttpResolvesTheConfigListFromDns() {
     get("https://cloudflare-ech.com/cdn-cgi/trace")
+    record("okHttpResolvesTheConfigListFromDns", "cloudflare-ech.com")
 
     assertThat(dns["cloudflare-ech.com"]).isNotNull()
   }
 
   private fun get(url: String): String =
     client.newCall(Request(url.toHttpUrl())).execute().use { it.body.string() }
+
+  private fun record(
+    case: String,
+    server: String,
+  ) {
+    EchResultReport.record(
+      suite = "EchConscryptTest",
+      case = case,
+      server = server,
+      platform = "CONSCRYPT_DIRECT",
+      attempts = listOf(EchResultReport.Attempt("dns", dns[server])),
+    )
+  }
 }

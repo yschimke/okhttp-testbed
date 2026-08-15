@@ -1,195 +1,246 @@
-// Renders the ECH results matrix from latest.json.
-//
-// The question this page exists to answer is "does ECH work, where?", and that is a grid: one
-// row per server, one column per way of reaching it. The four suites make the same requests
-// and differ only in what is doing the TLS, so reading them side by side is what turns four
-// separate results into one finding.
-//
-// Case names differ between suites for the same server, so the mapping is written out rather
-// than guessed. A blank cell means that suite doesn't cover that server, which is a fact worth
-// showing — it is why three of the rows have gaps.
+// ECH is a matrix, not a single result: server, TLS mechanism, OkHttp version and platform all
+// matter. latest.json carries JUnit results plus the ECHConfigLists captured beside them.
 
-const SUITES = [
-  {
-    suite: 'EchTest',
-    param: 'JDK',
-    heading: 'OkHttp as shipped',
-    note: 'JVM, Jdk9Platform',
-  },
-  {
-    suite: 'EchTest',
-    param: 'CONSCRYPT_ECH',
-    heading: 'OkHttp + the missing call',
-    note: 'JVM, EchConscryptPlatform',
-  },
-  {
-    suite: 'EchConscryptTest',
-    heading: 'Conscrypt directly',
-    note: 'JVM, outside OkHttp',
-  },
-  {
-    suite: 'PublicEncryptedClientHelloTest',
-    heading: 'OkHttp on Android',
-    note: 'the platform makes the call',
-  },
+const ECH_SUITES = new Set([
+  'EncryptedClientHelloTest',
+  'PublicEncryptedClientHelloTest',
+  'EchTest',
+  'EchConscryptTest',
+  'EchClientHelloTest',
+  'EchGreaseTest',
+  'ClientHelloExtensionsTest',
+]);
+
+const PUBLIC_ROWS = [
+  ['cloudflare-ech.com', 'the server reports sni=encrypted', {
+    EchTest: 'cloudflareUsesEch',
+    EchConscryptTest: 'cloudflareAcceptsAnEncryptedClientHello',
+    PublicEncryptedClientHelloTest: 'cloudflareUsesEch',
+  }],
+  ['tls-ech.dev', 'the page says “You are using ECH”', {
+    EchTest: 'echIsAcceptedOnTlsEchDev',
+    EchConscryptTest: 'tlsEchDevAcceptsAnEncryptedClientHello',
+    PublicEncryptedClientHelloTest: 'echIsAcceptedOnTlsEchDev',
+  }],
+  ['defo.ie', 'SSL_ECH_STATUS: success', {
+    EchTest: 'echIsAcceptedOnDefoIe',
+    EchConscryptTest: 'defoIeAcceptsAnEncryptedClientHello',
+    PublicEncryptedClientHelloTest: 'echIsAcceptedOnDefoIe',
+  }],
+  ['stale.tls-ech.dev', 'stale DNS config is replaced by the server retry config', {
+    EchTest: 'echIsRetriedOnStaleTlsEchDev',
+    PublicEncryptedClientHelloTest: 'echIsRetriedOnStaleTlsEchDev',
+  }],
+  ['tls12.tls-ech.dev', 'TLS 1.2 is reached without ECH', {
+    EchTest: 'tlsIsNotUsedOnTls12TlsEchDev',
+    EchConscryptTest: 'tls12IsReachedWithoutEch',
+    PublicEncryptedClientHelloTest: 'tlsIsNotUsedOnTls12TlsEchDev',
+  }],
+  ['wrong.tls-ech.dev', '302 is returned and the inner hostname is verified', {
+    EchTest: 'echIsAcceptedOnWrongTlsEchDev',
+    PublicEncryptedClientHelloTest: 'echIsAcceptedOnWrongTlsEchDev',
+  }],
 ];
 
-const ROWS = [
-  {
-    server: 'cloudflare-ech.com',
-    asserts: 'the server reports sni=encrypted',
-    cases: {
-      EchTest: 'cloudflareUsesEch',
-      EchPlatformTest: 'cloudflareUsesEch',
-      EchConscryptTest: 'cloudflareAcceptsAnEncryptedClientHello',
-      PublicEncryptedClientHelloTest: 'cloudflareUsesEch',
-    },
-  },
-  {
-    server: 'tls-ech.dev',
-    asserts: 'the page says "You are using ECH"',
-    cases: {
-      EchTest: 'echIsAcceptedOnTlsEchDev',
-      EchPlatformTest: 'echIsAcceptedOnTlsEchDev',
-      EchConscryptTest: 'tlsEchDevAcceptsAnEncryptedClientHello',
-      PublicEncryptedClientHelloTest: 'echIsAcceptedOnTlsEchDev',
-    },
-  },
-  {
-    server: 'defo.ie',
-    asserts: 'SSL_ECH_STATUS: success',
-    cases: {
-      EchTest: 'echIsAcceptedOnDefoIe',
-      EchPlatformTest: 'echIsAcceptedOnDefoIe',
-      EchConscryptTest: 'defoIeAcceptsAnEncryptedClientHello',
-      PublicEncryptedClientHelloTest: 'echIsAcceptedOnDefoIe',
-    },
-  },
-  {
-    server: 'stale.tls-ech.dev',
-    asserts: 'a stale config is retried with the server’s',
-    cases: {
-      EchTest: 'echIsRetriedOnStaleTlsEchDev',
-      PublicEncryptedClientHelloTest: 'echIsRetriedOnStaleTlsEchDev',
-    },
-  },
-  {
-    server: 'tls12.tls-ech.dev',
-    asserts: 'TLS 1.2 is reached without ECH rather than failing',
-    cases: {
-      EchTest: 'tlsIsNotUsedOnTls12TlsEchDev',
-      EchConscryptTest: 'tls12IsReachedWithoutEch',
-      PublicEncryptedClientHelloTest: 'tlsIsNotUsedOnTls12TlsEchDev',
-    },
-  },
-  {
-    server: 'wrong.tls-ech.dev',
-    asserts: 'the redirect is followed and the name verified',
-    cases: {
-      EchTest: 'echIsAcceptedOnWrongTlsEchDev',
-      PublicEncryptedClientHelloTest: 'echIsAcceptedOnWrongTlsEchDev',
-    },
-  },
+const FIXTURE_ROWS = [
+  ['green.secret.test', 'accepted on the first handshake', 'greenPathAcceptsEncryptedClientHello'],
+  ['retry.secret.test', 'rejected, retried with the server config, then accepted', 'rejectedConfigIsRetriedWithServerConfig'],
+  ['disabled.secret.test', 'rejected, then retried without ECH', 'rejectedConfigWithoutServerConfigIsRetriedWithoutEch'],
 ];
 
-// EchTest is parameterised over the TLS stack, so its cases arrive as "<case> <PLATFORM>";
-// the other suites have a case per server and no parameter. Names are normalised upstream in
-// collect_results.py, so this only has to take the parameter back off.
-const caseKey = (column) => (name) =>
-  column.param ? (name.endsWith(` ${column.param}`) ? name.slice(0, -column.param.length - 1) : null) : name;
+const baseName = (suite) => suite.name.split(' · ')[0];
+const variantOf = (suite) => suite.name.includes(' · ') ? suite.name.split(' · ').slice(1).join(' · ') : '';
+const text = (node, value) => { node.textContent = value; return node; };
 
-const text = (el, value) => {
-  el.textContent = value;
-  return el;
-};
-
-function findSuites(data) {
-  const found = new Map();
-  for (const version of data.versions || []) {
-    for (const suite of version.suites || []) {
-      // A version testing ECH is a version with these suites in it; if two versions both ran
-      // one, the later-sorted (snapshot) wins, which is the one that can do ECH at all.
-      found.set(suite.name, { suite, version });
-    }
-  }
-  return found;
+function entries(data, wanted) {
+  return (data.versions || []).flatMap((version) =>
+    (version.suites || [])
+      .filter((suite) => !wanted || wanted.has(baseName(suite)))
+      .map((suite) => ({ version, suite, base: baseName(suite), variant: variantOf(suite) })),
+  );
 }
 
-function cellFor(entry, column, caseName) {
-  if (!entry || !caseName) return null;
-  const key = caseKey(column);
-  return (entry.suite.cases || []).find((c) => key(c.name) === caseName) || null;
+function resultPill(result) {
+  const pill = document.createElement('span');
+  const status = result?.status || 'unknown';
+  pill.className = `pill ${status === 'failed' ? 'failed' : status}`;
+  text(pill,
+    status === 'passed' ? 'passed'
+    : status === 'expected' ? 'expected'
+    : status === 'failed' ? 'failed'
+    : status === 'skipped' ? 'not run'
+    : '—');
+  const why = result?.expectedReason || result?.message;
+  if (why) pill.title = why;
+  return pill;
 }
 
-function render(data, root) {
-  const found = findSuites(data);
-  const columns = SUITES.filter((c) => found.has(c.suite));
+function evidenceFor(entry, caseName) {
+  return (entry.version.echResults || []).find((record) =>
+    record.suite === entry.base &&
+    record.case === caseName &&
+    (!record.variant || !entry.variant || record.variant === entry.variant),
+  );
+}
 
-  if (!columns.length) {
-    text(root, 'No ECH results in the most recent collection.');
-    return;
+function evidence(record) {
+  if (!record) return null;
+  const attempts = record.attempts || [];
+  const detail = document.createElement('details');
+  detail.className = 'ech-record';
+  const summary = document.createElement('summary');
+  text(summary, attempts.map((attempt) =>
+    attempt.echConfigList ? `${attempt.source} config` : `${attempt.source} (no config)`,
+  ).join(' → ') || 'no attempts');
+  detail.append(summary);
+  for (const attempt of attempts) {
+    const line = document.createElement('div');
+    const label = document.createElement('strong');
+    text(label, `${attempt.source}: `);
+    const value = document.createElement('code');
+    text(value, attempt.echConfigList || 'none');
+    line.append(label, value);
+    detail.append(line);
   }
+  return detail;
+}
 
+function resultCell(entry, caseName) {
+  const td = document.createElement('td');
+  if (!entry || !caseName) {
+    text(td, '—');
+    td.title = 'not covered on this platform';
+    return td;
+  }
+  const result = (entry.suite.cases || []).find((item) => item.name === caseName);
+  if (!result) return text(td, '—');
+  td.append(resultPill(result));
+  const details = evidence(evidenceFor(entry, caseName));
+  if (details) td.append(details);
+  return td;
+}
+
+function heading(entry, mechanism) {
+  const th = document.createElement('th');
+  const strong = document.createElement('strong');
+  text(strong, mechanism || entry.base);
+  const small = document.createElement('small');
+  text(small, `${entry.version.okhttpVersion} · ${entry.suite.platform || entry.variant}`);
+  th.append(strong, document.createElement('br'), small);
+  return th;
+}
+
+function publicColumns(data) {
+  return entries(data, new Set(['EchTest', 'EchConscryptTest', 'PublicEncryptedClientHelloTest']))
+    .flatMap((entry) => entry.base === 'EchTest'
+      ? [
+          { ...entry, param: 'JDK', mechanism: 'OkHttp as shipped' },
+          { ...entry, param: 'CONSCRYPT_ECH', mechanism: 'OkHttp + ECH call' },
+        ]
+      : [{
+          ...entry,
+          param: '',
+          mechanism: entry.base === 'EchConscryptTest' ? 'Conscrypt directly' : 'OkHttp on Android',
+        }]);
+}
+
+const caseFor = (column, baseCase) => baseCase && column.param ? `${baseCase} ${column.param}` : baseCase;
+
+function tableIn(root, headers, rows) {
   const table = document.createElement('table');
-
   const head = table.createTHead().insertRow();
-  text(head.insertCell(), 'Server');
-  text(head.insertCell(), 'What passes means');
-  for (const column of columns) {
-    const cell = head.insertCell();
-    const strong = document.createElement('strong');
-    text(strong, column.heading);
-    cell.append(strong, document.createElement('br'));
-
-    // The platform is read from the run rather than written here, so a runner image change
-    // or a different emulator shows up as a different platform instead of a stale label.
-    const small = document.createElement('small');
-    text(small, found.get(column.suite).suite.platform || column.note);
-    cell.append(small);
+  for (const header of headers) {
+    head.append(typeof header === 'string' ? text(document.createElement('th'), header) : header);
   }
-
   const body = table.createTBody();
-  for (const row of ROWS) {
-    const tr = body.insertRow();
-    const server = tr.insertCell();
-    server.className = 'mono';
-    text(server, row.server);
-    text(tr.insertCell(), row.asserts);
-
-    for (const column of columns) {
-      const cell = tr.insertCell();
-      const result = cellFor(found.get(column.suite), column, row.cases[column.suite]);
-      if (!result) {
-        text(cell, '—');
-        cell.title = 'not covered by this suite';
-        continue;
-      }
-      const pill = document.createElement('span');
-      // Three outcomes, not two. "expected" is a failure this repository predicted and can
-      // explain — it carries its reason in the tooltip; "no" is one nobody predicted, and is
-      // the only thing here worth chasing.
-      const label =
-        result.status === 'passed' ? 'yes'
-        : result.status === 'expected' ? 'expected'
-        : result.status === 'failed' ? 'no'
-        : result.status;
-      pill.className = `pill ${result.status === 'failed' ? 'failed' : result.status}`;
-      text(pill, label);
-      const why = result.expectedReason || result.message;
-      if (why) pill.title = why;
-      cell.append(pill);
+  for (const cells of rows) {
+    const row = body.insertRow();
+    for (const item of cells) {
+      if (item instanceof Node) row.append(item);
+      else text(row.insertCell(), item);
     }
   }
-
   const scroll = document.createElement('div');
   scroll.className = 'table-scroll';
   scroll.append(table);
   root.replaceChildren(scroll);
 }
 
+function renderPublic(data) {
+  const root = document.getElementById('ech-public-results');
+  const columns = publicColumns(data);
+  if (!columns.length) return text(root, 'No public ECH results in the most recent collection.');
+  const rows = PUBLIC_ROWS.map(([server, meaning, cases]) => {
+    const serverCell = document.createElement('td');
+    serverCell.className = 'mono';
+    text(serverCell, server);
+    return [serverCell, meaning, ...columns.map((column) => resultCell(column, caseFor(column, cases[column.base])))];
+  });
+  tableIn(root, ['Server', 'What passes means', ...columns.map((column) => heading(column, column.mechanism))], rows);
+}
+
+function renderFixture(data) {
+  const root = document.getElementById('ech-fixture-results');
+  const columns = entries(data, new Set(['EncryptedClientHelloTest']));
+  if (!columns.length) return text(root, 'No fixture ECH results in the most recent collection.');
+  const rows = FIXTURE_ROWS.map(([server, meaning, caseName]) => {
+    const serverCell = document.createElement('td');
+    serverCell.className = 'mono';
+    text(serverCell, server);
+    return [serverCell, meaning, ...columns.map((column) => resultCell(column, caseName))];
+  });
+  tableIn(root, ['Test server', 'Expected path', ...columns.map((column) => heading(column, column.variant || 'Android'))], rows);
+}
+
+function allColumns(data) {
+  return entries(data, ECH_SUITES).flatMap((entry) => {
+    if (entry.base !== 'EchTest') return [{ ...entry, param: '', mechanism: entry.base }];
+    return [
+      { ...entry, param: 'JDK', mechanism: 'EchTest · shipped' },
+      { ...entry, param: 'CONSCRYPT_ECH', mechanism: 'EchTest · ECH call' },
+    ];
+  });
+}
+
+function renderAll(data) {
+  const root = document.getElementById('ech-all-results');
+  const columns = allColumns(data);
+  if (!columns.length) return text(root, 'No ECH cases in the most recent collection.');
+
+  const keys = new Map();
+  for (const column of columns) {
+    for (const result of column.suite.cases || []) {
+      if (column.param && !result.name.endsWith(` ${column.param}`)) continue;
+      if (!column.param && column.base === 'EchTest') continue;
+      const display = column.param ? result.name.slice(0, -column.param.length - 1) : result.name;
+      keys.set(`${column.base}|${display}`, { suite: column.base, display });
+    }
+  }
+
+  const rows = [...keys.values()]
+    .sort((a, b) => `${a.suite}.${a.display}`.localeCompare(`${b.suite}.${b.display}`))
+    .map((result) => {
+      const name = document.createElement('td');
+      name.className = 'suite';
+      text(name, `${result.suite}.${result.display}`);
+      return [name, ...columns.map((column) =>
+        column.base === result.suite
+          ? resultCell(column, caseFor(column, result.display))
+          : resultCell(null, null),
+      )];
+    });
+  tableIn(root, ['Test case', ...columns.map((column) => heading(column, column.mechanism))], rows);
+}
+
 fetch('../data/latest.json')
-  .then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
-  .then((data) => render(data, document.getElementById('ech-matrix')))
+  .then((response) => response.ok ? response.json() : Promise.reject(response.status))
+  .then((data) => {
+    renderPublic(data);
+    renderFixture(data);
+    renderAll(data);
+  })
   .catch(() => {
-    text(document.getElementById('ech-matrix'), 'Results are unavailable — latest.json could not be read.');
+    for (const id of ['ech-public-results', 'ech-fixture-results', 'ech-all-results']) {
+      text(document.getElementById(id), 'Results are unavailable — latest.json could not be read.');
+    }
   });
