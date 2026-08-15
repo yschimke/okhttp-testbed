@@ -1,0 +1,45 @@
+name: rerun-flaky
+
+# Re-runs the emulator suite once when it fails, and nothing else.
+#
+# `android-ech` fails on infrastructure often enough to be a nuisance: the emulator comes up
+# half-dead, `package install-create` answers `Can't find service: package`, and the job ends
+# having run *zero* tests. That is not a result about OkHttp, and re-running it by hand is the
+# only thing anyone does about it.
+#
+# Deliberately narrow, because an auto-retry is a way to hide real failures:
+#
+#   - Only `android-ech`. The container and network suites fail for reasons worth reading, and
+#     a flaky emulator is a problem the others do not have. Extending this to them would mean
+#     deciding their failures are noise too, which is a different and much bigger claim.
+#   - Only once, guarded on `run_attempt == 1`. A second failure is the answer, not an
+#     invitation to keep asking: something that fails twice is either broken or flaky enough to
+#     be worth fixing rather than absorbing.
+#   - The re-run is visible. It appears as attempt 2 of the same run, so the history shows both
+#     the failure and the retry rather than quietly presenting a green first attempt.
+#
+# If this workflow starts firing regularly, that is the signal to fix the emulator setup — not
+# to widen the retry.
+on:
+  workflow_run:
+    workflows: [android-ech]
+    types: [completed]
+
+permissions:
+  actions: write
+
+jobs:
+  rerun:
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.run_attempt == 1
+    runs-on: ubuntu-latest
+    steps:
+      - name: Re-run the failed jobs once
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          echo "Re-running failed jobs in run $RUN_ID (attempt ${{ github.event.workflow_run.run_attempt }})"
+          gh run rerun "$RUN_ID" --failed

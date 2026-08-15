@@ -404,6 +404,23 @@ It loads badssl's published PKCS#12 through a `KeyStore` and a `KeyManagerFactor
 `okhttp-tls`: `HandshakeCertificates` has no route in from a PKCS#12, and converting it first
 would mean testing the conversion.
 
+One automatic re-run, for the emulator and nothing else
+-------------------------------------------------------
+
+`android-ech` fails on infrastructure often enough to be a nuisance: the emulator comes up
+half-dead, the APK install answers `Can't find service: package`, and the job finishes having run
+zero tests. That is not a result about OkHttp, and re-running it by hand was the only response.
+`rerun-flaky.yml` does it automatically now.
+
+It is deliberately narrow, because an auto-retry is a way to hide real failures. Only
+`android-ech` — the container and network suites fail for reasons worth reading, and extending
+this to them would be claiming their failures are noise too. Only once, guarded on
+`run_attempt == 1`: something that fails twice is either broken or flaky enough to fix rather than
+absorb. And the retry is visible as attempt 2 of the same run, so the history shows both.
+
+If it starts firing regularly, that is the signal to fix the emulator setup rather than to widen
+the retry.
+
 The resolver matrix
 -------------------
 
