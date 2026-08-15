@@ -72,6 +72,7 @@ Listeners
 | `tls11` | `:8411` | TLS 1.1 only, obsolete suites, `http/1.1`                         |
 | `tls12` | `:8412` | TLS 1.2 only, `http/1.1`                                          |
 | `tls13` | `:8413` | TLS 1.3 only, `http/1.1`                                          |
+| `pqc`   | `:8414` | TLS 1.3 with X25519MLKEM768 only, `http/1.1`                       |
 | `mtls`  | `:8425` | Requires a client certificate signed by the fixture CA            |
 | `badchain-expired` | `:8420` | A leaf that expired yesterday                            |
 | `badchain-wrong-host` | `:8421` | A valid chain for a name it is not served on          |
@@ -179,6 +180,7 @@ turns that listener off.
 | `RAW_ADDR` | `:8081` | raw request-head echo |
 | `HTTPS_ADDR` | `:8443` | TLS, with `h2` |
 | `TLS10_ADDR` … `TLS13_ADDR` | `:8410` … `:8413` | one TLS version each |
+| `PQC_ADDR` | `:8414` | TLS 1.3 restricted to X25519MLKEM768 |
 | `BADCHAIN_EXPIRED_ADDR` | `:8420` | the expired chain |
 | `BADCHAIN_WRONG_HOST_ADDR` | `:8421` | the wrong-host chain |
 | `BADCHAIN_SELF_SIGNED_ADDR` | `:8422` | the self-signed chain |

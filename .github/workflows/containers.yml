@@ -107,7 +107,7 @@ jobs:
         # --continue so a failing container test doesn't stop loomTest from running:
         # every suite should report every run, whatever the others did.
         run: >
-          ./gradlew containers:test containers:loomTest containers:hostileTest --continue
+          ./gradlew containers:test containers:loomTest containers:hostileTest containers:postQuantumTest --continue
           -PtestJavaVersion=${{ matrix.javaVersion }}
           -Porg.gradle.java.installations.fromEnv=JAVA_HOME_${{ matrix.javaVersion }}_X64,JAVA_HOME_21_X64
           ${{ matrix.okhttpVersion && format('-PokhttpVersion={0}', matrix.okhttpVersion) || '' }}

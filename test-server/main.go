@@ -15,6 +15,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log"
@@ -116,6 +117,20 @@ func main() {
 			}
 			return err
 		})
+		s.shutdownWith(ctx, srv)
+	}
+
+	// TLS 1.3 with no classical key exchange fallback. A client reaches this listener only if its
+	// TLS provider offers the hybrid post-quantum group standardized by RFC 9794.
+	if addr := env("PQC_ADDR", ":8414"); addr != "" {
+		s.addListener(listener{
+			Name: "pqc", Addr: addr, TLS: true,
+			MinVersion: "TLSv1.3", MaxVersion: "TLSv1.3", ALPN: "http/1.1",
+			Note: "requires the X25519MLKEM768 post-quantum hybrid named group",
+		})
+		srv := s.tlsServer(addr, tlsVersions{min: tls.VersionTLS13, max: tls.VersionTLS13}, false)
+		srv.TLSConfig.CurvePreferences = []tls.CurveID{tls.X25519MLKEM768}
+		serve("pqc", func() error { return srv.ListenAndServeTLS("", "") })
 		s.shutdownWith(ctx, srv)
 	}
 

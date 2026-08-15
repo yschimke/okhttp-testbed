@@ -793,6 +793,12 @@ Whatever the count turns out to be, it is a fact about OkHttp's retry policy rat
 here, so it is recorded. Its sibling `HostileResponseTest` stays fatal, because "a truncated body
 must not read as a complete one" is an invariant rather than a policy.
 
+`PostQuantumTest` points an ordinary public-API client at this repository's TLS 1.3 listener
+that accepts only X25519MLKEM768. The JDKs currently in the matrix do not offer that hybrid group,
+and published OkHttp cannot select it yet, so the successful-handshake assertion is an expected
+failure. It runs under `postQuantumTest`: the failed handshake remains visible until the capability
+lands, at which point the same assertion turns green without updating the expectation in the test.
+
 `EchTest` is the other of that kind. ECH takes two halves: OkHttp reads an ECH config list out of the
 DNS HTTPS record, and the TLS stack encrypts the client hello with it. OkHttp's half works
 on the JVM — the routes carry a config list, which is what the `echConfigList` assertions
