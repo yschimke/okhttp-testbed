@@ -8,7 +8,7 @@
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../assets/style.css">
 </head>
-<body>
+<body data-topic="proxies">
 
 <header class="site-header">
   <div class="wrap">
@@ -35,7 +35,13 @@
     authentication, and address forms. So the testbed runs real ones, in containers.
   </p>
 
-  <h2>What runs today</h2>
+  <section class="topic-evidence" aria-labelledby="current-results">
+    <h2 id="current-results">Current results</h2>
+    <div class="run-summary" id="topic-run-summary">Loading the latest proxy evidence…</div>
+    <div id="topic-results"></div>
+  </section>
+
+  <h2>How the result is produced</h2>
   <div class="table-scroll">
     <table>
       <thead>
@@ -56,9 +62,9 @@
     </table>
   </div>
   <p>
-    Both suites run under the <code>test</code> task, so a failure is fatal: unlike the findings
-    suites, a broken proxy result means something here is wrong — a moved image, a changed default,
-    or a real client regression.
+    The task and severity printed beside each live result above decide whether a failure gates.
+    The table documents the fixture behind each named suite; the published JUnit cases above are
+    the authority for what actually ran.
   </p>
 
   <h2>Specifications</h2>
@@ -128,5 +134,6 @@
   </div>
 </footer>
 
+<script src="../assets/topic-results.js"></script>
 </body>
 </html>

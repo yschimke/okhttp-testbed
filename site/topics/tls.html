@@ -8,7 +8,7 @@
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../assets/style.css">
 </head>
-<body>
+<body data-topic="tls">
 
 <header class="site-header">
   <div class="wrap">
@@ -35,8 +35,22 @@
     what makes the result mean something.
   </p>
 
-  <h2>What runs today</h2>
+  <section class="topic-evidence" aria-labelledby="current-results">
+    <h2 id="current-results">Current results</h2>
+    <div class="run-summary" id="topic-run-summary">Loading the latest TLS evidence…</div>
+    <div id="topic-results"></div>
+  </section>
+
+  <h2 id="observations">Recorded policy and handshake observations</h2>
+  <p>These values come directly from the latest network result. “Accepted” and “refused” describe platform behaviour; they are not editorial verdicts.</p>
+  <div id="topic-observations"></div>
+
+  <h2 id="probed-endpoints">Probed endpoints</h2>
+  <div id="topic-endpoints"></div>
+
+  <h2>How the results are produced</h2>
   <p>
+    The suite list above is the authority for what runs today. For the container evidence,
     <code>BasicMockServerTest</code> starts a MockServer container and makes the same request over
     both <code>http</code> and <code>https</code>. The interesting half is the trust setup:
     <code>trustMockServer()</code> builds a real <code>X509TrustManager</code> from MockServer's own
@@ -106,7 +120,7 @@
         <tr>
           <td class="mono">mockserver/mockserver (container)</td>
           <td>MockServer</td>
-          <td>What runs today: a local TLS endpoint with a keystore the test trusts explicitly. The image tag is pinned to the client version, because a client refuses to talk to a server whose major.minor differs.</td>
+          <td>A local TLS endpoint with a keystore the test trusts explicitly. Its current coverage is reported under <code>BasicMockServerTest</code> above.</td>
         </tr>
         <tr>
           <td class="mono"><a href="https://badssl.com/">badssl.com</a></td>
@@ -137,10 +151,7 @@
     the badssl endpoints, is much less so.
   </p>
 
-  <p class="note">
-    Only the MockServer suite runs today. The public endpoints above are where the network suite
-    will point; they are listed here so the intent is on the record before the code is.
-  </p>
+  <p class="note">A site listed here is documentation, not evidence that it ran. Only endpoints and suites present in the live result blocks above count as current coverage.</p>
 
 </main>
 
@@ -152,5 +163,6 @@
   </div>
 </footer>
 
+<script src="../assets/topic-results.js"></script>
 </body>
 </html>

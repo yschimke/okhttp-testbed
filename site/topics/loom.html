@@ -8,7 +8,7 @@
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../assets/style.css">
 </head>
-<body>
+<body data-topic="loom">
 
 <header class="site-header">
   <div class="wrap">
@@ -36,6 +36,12 @@
     OkHttp does it.
   </p>
 
+  <section class="topic-evidence" aria-labelledby="current-results">
+    <h2 id="current-results">Current results</h2>
+    <div class="run-summary" id="topic-run-summary">Loading the latest virtual-thread evidence…</div>
+    <div id="topic-results"></div>
+  </section>
+
   <h2>What the suite asserts</h2>
   <p>
     <code>BasicLoomTest</code> runs a <code>Dispatcher</code> backed by
@@ -46,9 +52,10 @@
     which is the only way to observe pinning from outside the JDK.
   </p>
 
-  <h2>The current finding</h2>
+  <h2>An observed pinning signature</h2>
   <p>
-    Against OkHttp 5.4.0 on JDK 21, it fails:
+    A recorded OkHttp 5.4.0/JDK 21 result produced this signature. Treat it as an example for
+    interpreting the live result above, not as the current result:
   </p>
   <pre style="overflow-x:auto;background:var(--bg-sunken);padding:0.9rem 1rem;border-radius:8px;font-size:0.82rem;">VirtualThread[#51]/runnable@ForkJoinPool-1-worker-3 reason:MONITOR
     okhttp3.internal.http2.Http2Writer.flush(Http2Writer.kt:131) &lt;== monitors:1
@@ -57,7 +64,7 @@
     <code>Http2Connection.newStream</code> holds a monitor across <code>Http2Writer.flush</code>'s
     blocking write. That is a true statement about the published artifact, not a broken test — so
     the suite runs under the <code>loomTest</code> Gradle task with <code>ignoreFailures</code>.
-    The assertion stays exactly as written, the failure is recorded in the JUnit XML and shown on
+    The assertion stays exactly as written. When present, the failure is recorded in the JUnit XML and shown above and on
     the <a href="../">status page</a> as a <span class="pill finding">findings</span> result, and
     the build stays green. A finding about OkHttp should not read as this repository being red.
   </p>
@@ -121,5 +128,6 @@
   </div>
 </footer>
 
+<script src="../assets/topic-results.js"></script>
 </body>
 </html>

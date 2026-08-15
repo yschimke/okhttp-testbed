@@ -405,6 +405,46 @@ details.about .pill { vertical-align: baseline; }
 .topic-card h3 { margin: 0 0 0.3rem; }
 .topic-card p { margin: 0; font-size: 0.88rem; color: var(--text-muted); }
 
+.topic-evidence { margin: 1.5rem 0 0; }
+
+.topic-result {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  margin: 0.6rem 0;
+  padding: 0.7rem 0.9rem;
+}
+
+.topic-result summary {
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.75rem;
+}
+
+.topic-result .suite-name { font-family: var(--mono); font-size: 0.88rem; font-weight: 600; }
+
+.result-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+  margin: 0.7rem 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.case-list { list-style: none; margin: 0; padding: 0; max-width: none; }
+.case-list li { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.35rem 0.65rem; padding: 0.35rem 0; border-top: 1px solid var(--border); }
+.case-detail { flex-basis: 100%; color: var(--text-muted); font-size: 0.82rem; padding-left: 0.25rem; }
+
+.endpoint-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.75rem; padding: 0.45rem 0; border-bottom: 1px solid var(--border); }
+
+.observation-card { display: inline-block; vertical-align: top; min-width: 17rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-raised); padding: 0.8rem 1rem; margin: 0 0.6rem 0.6rem 0; }
+.observation-card p { margin: 0.45rem 0 0; }
+
+.evidence-link { font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+
 .note {
   border-left: 3px solid var(--border-strong);
   padding: 0.1rem 0 0.1rem 1rem;

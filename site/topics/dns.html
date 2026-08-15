@@ -8,7 +8,7 @@
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../assets/style.css">
 </head>
-<body>
+<body data-topic="dns">
 
 <header class="site-header">
   <div class="wrap">
@@ -35,6 +35,19 @@
     the ECH configuration. Testing that means talking to real resolvers, because no two of them
     return quite the same thing.
   </p>
+
+  <section class="topic-evidence" aria-labelledby="current-results">
+    <h2 id="current-results">Current results</h2>
+    <div class="run-summary" id="topic-run-summary">Loading the latest DNS evidence…</div>
+    <div id="topic-results"></div>
+  </section>
+
+  <h2 id="observed-resolvers">Observed resolver answers</h2>
+  <p>The matrix below is recorded by <code>DohMatrixTest</code>; it is evidence, not a static description of resolver policy.</p>
+  <div id="topic-observations"></div>
+
+  <h2 id="probed-endpoints">Probed endpoints</h2>
+  <div id="topic-endpoints"></div>
 
   <h2>Why it lives here</h2>
   <p>
@@ -91,7 +104,7 @@
     </table>
   </div>
 
-  <h2>Test resolvers</h2>
+  <h2>What the resolver results exercise</h2>
   <div class="table-scroll">
     <table>
       <thead>
@@ -101,12 +114,12 @@
         <tr>
           <td class="mono">https://1.1.1.1/dns-query</td>
           <td>Cloudflare</td>
-          <td>Addressed by IP, so resolving the resolver does not itself need a resolver. Returns <code>HTTPS</code> records with <code>ech</code>.</td>
+          <td>Addressed by IP, so resolving the resolver does not itself need a resolver. Its current answer is shown in the recorded matrix above.</td>
         </tr>
         <tr>
           <td class="mono">https://dns.google/dns-query</td>
           <td>Google</td>
-          <td>A second implementation to compare answers against.</td>
+          <td>A second implementation whose recorded answer can be compared above.</td>
         </tr>
         <tr>
           <td class="mono">https://dns.quad9.net/dns-query</td>
@@ -161,5 +174,6 @@
   </div>
 </footer>
 
+<script src="../assets/topic-results.js"></script>
 </body>
 </html>

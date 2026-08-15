@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Test servers — OkHttp Testbed</title>
-<meta name="description" content="A survey of the public HTTP, TLS and DNS test servers that HTTP clients test against — badssl, httpbin, nghttp2, DoH resolvers, ECH endpoints — and the roadmap for pointing the OkHttp testbed at them.">
+<meta name="description" content="Current OkHttp testbed results by server, followed by the documentation and reference catalog that explain them.">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../assets/style.css">
 </head>
-<body>
+<body data-topic="test-servers">
 
 <header class="site-header">
   <div class="wrap">
@@ -30,12 +30,22 @@
 
   <h1>Test servers</h1>
   <p class="lede">
-    A survey of the public HTTP, TLS and DNS servers that client authors test against — the ones
-    behind rustls's connect tests, curl's HTTP/3 notes, and every browser's certificate-error UI —
-    and the roadmap for pointing this testbed at the ones that would tell us something about OkHttp.
+    The servers exercised by the latest run come first. The catalog below explains those results
+    and records other useful fixtures, but a catalog entry is not counted as coverage until a
+    published suite or endpoint probe backs it.
   </p>
 
-  <h2>Why survey them at all</h2>
+  <section class="topic-evidence" aria-labelledby="current-results">
+    <h2 id="current-results">Current results</h2>
+    <div class="run-summary" id="topic-run-summary">Loading the latest test-server evidence…</div>
+    <div id="topic-results"></div>
+  </section>
+
+  <h2 id="probed-endpoints">Probed public endpoints</h2>
+  <p>Reachability is recorded separately from assertions so an unavailable third-party server is not mistaken for a client regression.</p>
+  <div id="topic-endpoints"></div>
+
+  <h2>Why document the wider landscape</h2>
   <p>
     OkHttp's own test suite talks to MockWebServer, which shares its framing and its TLS setup with
     the client under test. That is the right way to test parsing and state machines, and it is
@@ -50,11 +60,11 @@
     <code>connect-tests</code> crate that opens real connections to a fixed list of top sites and to
     badssl.com. curl documents public HTTP/3 endpoints for exactly this reason. The browsers built
     badssl.com in the first place, to have somewhere to point their certificate-error UI at. What
-    follows is what is out there, what each one is good for, and — as much as it matters — what each
-    one is <em>not</em> good for.
+    follows explains the servers behind current results and identifies candidates for future
+    results. Only the evidence blocks above say what ran.
   </p>
 
-  <h2>The two rules this roadmap is written to</h2>
+  <h2>The two rules behind these results</h2>
   <p>
     Network tests have a bad reputation, and it is deserved when they are written carelessly. Two
     rules keep them worth having:
@@ -443,10 +453,7 @@
     under your control — How's My SSL says so explicitly — that is exactly what this is.
   </p>
 
-  <p class="note">
-    None of the network suites run yet. The <a href="../">status page</a> lists what exists today;
-    this page is the survey the roadmap was drawn from.
-  </p>
+  <p class="note">The live suite and endpoint blocks at the top of this page are the coverage record. Entries in this catalog without a matching result remain documentation or roadmap candidates.</p>
 
 </main>
 
@@ -458,5 +465,6 @@
   </div>
 </footer>
 
+<script src="../assets/topic-results.js"></script>
 </body>
 </html>
