@@ -1,0 +1,45 @@
+name: job-reruns
+
+# Maintains a Renovate-style issue for the workflows that normally run on a schedule.
+# Checking an item dispatches that workflow immediately; completed runs refresh the issue's
+# last-run table. A push trigger creates the issue when this workflow first lands on main.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/job-reruns.yml'
+      - '.github/scripts/job_reruns.py'
+  issues:
+    types: [edited]
+  workflow_dispatch:
+  workflow_run:
+    workflows: [containers, test-server, network, android-ech]
+    types: [completed]
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+
+# Several scheduled workflows can finish together. Keep their issue updates in order so a
+# slower API response cannot overwrite a newer view of the runs.
+concurrency:
+  group: job-reruns-dashboard
+  cancel-in-progress: false
+
+jobs:
+  update-issue:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Dispatch selected jobs and update issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+        run: python3 .github/scripts/job_reruns.py
