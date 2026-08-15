@@ -20,6 +20,36 @@ if (okhttpVersion.endsWith("-SNAPSHOT")) {
   }
 }
 
+// `Dns.Record` and `DnsOverHttps.Builder.includeServiceMetadata` arrived in 5.5.0, so the suite
+// that asks what an `HTTPS` record's parameters mean cannot compile against anything earlier.
+// Left out of the source set entirely below that, exactly as the network module does it: these
+// suites have to build against whatever version the testbed is pointed at.
+val serviceMetadataVersion = listOf(5, 5, 0)
+
+val supportsServiceMetadata =
+  okhttpVersion
+    .substringBefore("-")
+    .split(".")
+    .mapNotNull(String::toIntOrNull)
+    .let { version ->
+      version.size == serviceMetadataVersion.size &&
+        version.zip(serviceMetadataVersion).firstNotNullOfOrNull { (a, b) -> (a - b).takeIf { it != 0 } } ?: 0 >= 0
+    }
+
+sourceSets {
+  test {
+    kotlin {
+      if (!supportsServiceMetadata) {
+        exclude("**/SvcParamTest.kt")
+      }
+    }
+  }
+}
+
+if (!supportsServiceMetadata) {
+  logger.lifecycle("Skipping SvcParamTest: OkHttp $okhttpVersion predates Dns.Record")
+}
+
 tasks.withType<Test>().configureEach {
   // Single source of truth for the MockServer version: the container image tag is
   // derived from it, so the client and the server can't drift apart.
@@ -34,6 +64,14 @@ tasks.withType<Test>().configureEach {
   // context. Supplied here rather than reached for with a relative path, which would depend on
   // the working directory the tests happen to run in.
   systemProperty("testbed.testServerDir", rootProject.layout.projectDirectory.dir("test-server").asFile.absolutePath)
+
+  // The same for the ECH fixture's Go source, which SvcParamTest builds in `doh` mode for its
+  // resolver. The directory rather than a project dependency: `ech-fixture`'s Kotlin targets a
+  // newer JDK than these suites compile for, and all that is needed here is the Go.
+  systemProperty(
+    "testbed.echFixtureDir",
+    rootProject.layout.projectDirectory.dir("ech-fixture/src/main/resources/ech-fixture").asFile.absolutePath,
+  )
 }
 
 // BasicLoomTest reports on OkHttp rather than on this repository: it asserts that no
@@ -129,6 +167,10 @@ dependencies {
   // A real trust manager from the fixture CA, without a KeyStore dance and without weakening
   // verification. okhttp-tls is published, so this stays inside the public-API-only rule.
   testImplementation("com.squareup.okhttp3:okhttp-tls:$okhttpVersion")
+
+  // SvcParamTest points a DoH client at the ECH fixture's resolver, which is the only way to ask
+  // about `HTTPS` record parameters nobody publishes.
+  testImplementation("com.squareup.okhttp3:okhttp-dnsoverhttps:$okhttpVersion")
 
   testImplementation(libs.junit.jupiter.api)
   testImplementation(libs.junit.jupiter.params)

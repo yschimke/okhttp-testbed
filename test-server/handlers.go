@@ -32,6 +32,7 @@ func (s *server) handler() http.Handler {
 
 	mux.HandleFunc("GET /info", s.info)
 	mux.HandleFunc("GET /ca.pem", s.caPEM)
+	mux.HandleFunc("GET /client.pem", s.clientPEM)
 	mux.HandleFunc("/tls", s.tlsInfo)
 
 	// The endpoint the httpbin family is worth having for: the whole request, echoed back as
@@ -93,6 +94,7 @@ var endpointIndex = []endpointDoc{
 	{"/health", "liveness"},
 	{"/info", "listeners, certificate mode, and the URL this request arrived as"},
 	{"/ca.pem", "the generated CA, when the server minted its own certificate"},
+	{"/client.pem", "a client certificate and key this CA signed, for the mtls listener"},
 	{"/tls", "the negotiated handshake and the ClientHello it was chosen from"},
 	{"/anything", "the whole request echoed back as JSON (any method)"},
 	{"/headers", "request headers, as net/http parsed them"},
@@ -147,6 +149,15 @@ func (s *server) caPEM(w http.ResponseWriter, _ *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/x-pem-file")
 	_, _ = w.Write(s.certs.caPEM)
+}
+
+func (s *server) clientPEM(w http.ResponseWriter, _ *http.Request) {
+	if len(s.certs.clientPEM) == 0 {
+		http.Error(w, "this server presents a supplied certificate; there is no CA to sign a client identity", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/x-pem-file")
+	_, _ = w.Write(s.certs.clientPEM)
 }
 
 func (s *server) tlsInfo(w http.ResponseWriter, r *http.Request) {

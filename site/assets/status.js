@@ -381,6 +381,10 @@ const DOH_OUTCOMES = {
   resolved: { status: "passed", text: "resolved" },
   sinkholed: { status: "finding", text: "sinkholed" },
   unresolved: { status: "expected", text: "no answer" },
+  // Answered with an HTTP error rather than with DNS — the resolver failing, not the name. Amber
+  // rather than grey: unlike "unavailable" it means the resolver was reachable and still gave a
+  // caller something that isn't an UnknownHostException.
+  errored: { status: "finding", text: "resolver error" },
   unavailable: { status: "skipped", text: "unavailable" },
 };
 
@@ -433,6 +437,117 @@ function renderDohMatrix(snapshot) {
       ]),
     ),
     el("tbody", {}, rows),
+  );
+}
+
+/*
+ * Which origins offer HTTP/3, and what OkHttp used instead.
+ *
+ * A record rather than a result: OkHttp has no HTTP/3, so "h2 at an origin advertising h3" is the
+ * correct outcome and an uninteresting assertion. The gap is the content — how much of the web is
+ * offering a protocol this client cannot take — and this is where it stops being a gap.
+ */
+function renderAltSvc(snapshot) {
+  const table = document.getElementById("alt-svc-table");
+  if (!table) return;
+
+  const recorded = snapshot.versions.find((v) => v.altSvc && v.altSvc.origins);
+  const origins = recorded ? Object.entries(recorded.altSvc.origins) : [];
+  if (!origins.length) {
+    table.replaceChildren(
+      el("tbody", {}, el("tr", {}, el("td", { textContent: "No HTTP/3 offers recorded in this run." }))),
+    );
+    return;
+  }
+
+  const rows = origins.map(([origin, row]) =>
+    el("tr", {}, [
+      el("td", { className: "mono", textContent: origin }),
+      el("td", {}, [
+        el("span", {
+          className: `pill ${row.advertisesH3 ? "finding" : "skipped"}`,
+          textContent: row.advertisesH3 ? "offers h3" : "no offer",
+        }),
+      ]),
+      el("td", { className: "mono", textContent: row.protocol }),
+      el("td", { className: "mono", textContent: row.altSvc || "—" }),
+    ]),
+  );
+
+  table.replaceChildren(
+    el(
+      "thead",
+      {},
+      el("tr", {}, [
+        el("th", { textContent: "Origin" }),
+        el("th", { textContent: "Alt-Svc" }),
+        el("th", { textContent: "OkHttp used" }),
+        el("th", { textContent: "Header" }),
+      ]),
+    ),
+    el("tbody", {}, rows),
+  );
+}
+
+/*
+ * Revocation, pinning and Certificate Transparency, per platform.
+ *
+ * Recorded rather than judged, and the reason is the same for all three: only pinning is a promise
+ * OkHttp makes. The JVM does not check revocation unless asked, Android's answer varies by
+ * release, and OkHttp enforces no SCTs — so "accepted" here is a fact about the platform, not a
+ * verdict on it. The column that matters is how these change between platforms and versions.
+ */
+function renderTlsPolicy(snapshot) {
+  const table = document.getElementById("tls-policy-table");
+  if (!table) return;
+
+  const rows = snapshot.versions.flatMap((version) =>
+    (version.tlsPolicy || []).map((record) => ({ version, record })),
+  );
+
+  if (!rows.length) {
+    table.replaceChildren(
+      el("tbody", {}, el("tr", {}, el("td", { textContent: "No TLS policy checks recorded in this run." }))),
+    );
+    return;
+  }
+
+  // Union of the questions asked, so a check added later gets a column without this being edited.
+  const questions = [...new Set(rows.flatMap(({ record }) => Object.keys(record.checks || {})))];
+
+  table.replaceChildren(
+    el(
+      "thead",
+      {},
+      el("tr", {}, [
+        el("th", { textContent: "OkHttp" }),
+        el("th", { textContent: "Platform" }),
+        ...questions.map((q) => el("th", { textContent: q })),
+      ]),
+    ),
+    el(
+      "tbody",
+      {},
+      rows.map(({ version, record }) =>
+        el("tr", {}, [
+          el("td", { className: "suite", textContent: version.okhttpVersion }),
+          el("td", { className: "mono", textContent: record.platform || record.javaVersion || "" }),
+          ...questions.map((question) => {
+            const check = (record.checks || {})[question];
+            if (!check) return el("td", {}, el("span", { className: "pill unknown", textContent: "—" }));
+            return el("td", {}, [
+              el("span", {
+                // Neutral colours on purpose: accepting a revoked certificate is the JDK's
+                // documented behaviour, and painting it red would be calling the platform broken.
+                className: `pill ${check.accepted ? "expected" : "skipped"}`,
+                textContent: check.accepted ? "accepted" : "refused",
+                title: check.detail || "",
+              }),
+            ]);
+          }),
+        ]),
+      ),
+    ),
   );
 }
 
@@ -564,6 +679,8 @@ async function loadJson(path) {
     renderEndpoints(snapshot);
     renderClientHello(snapshot);
     renderDohMatrix(snapshot);
+    renderAltSvc(snapshot);
+    renderTlsPolicy(snapshot);
   } catch (e) {
     document.getElementById("run-summary").replaceChildren(
       el("span", {}, [
@@ -581,6 +698,8 @@ async function loadJson(path) {
     renderEndpoints({ endpoints: [] });
     renderClientHello({ versions: [] });
     renderDohMatrix({ versions: [] });
+    renderAltSvc({ versions: [] });
+    renderTlsPolicy({ versions: [] });
   }
 
   try {

@@ -119,6 +119,20 @@ func main() {
 		s.shutdownWith(ctx, srv)
 	}
 
+	// Mutual TLS. Only when the server minted its own CA: verifying a client certificate needs
+	// a pool to verify it against, and a deployment holding a supplied certificate has no
+	// signing key to have issued one with.
+	if addr := env("MTLS_ADDR", ":8425"); addr != "" && s.certs.clientCAs != nil {
+		s.addListener(listener{
+			Name: "mtls", Addr: addr, TLS: true,
+			MinVersion: "TLSv1.2", MaxVersion: "TLSv1.3", ALPN: "http/1.1",
+			Note: "requires a client certificate signed by the fixture CA; see /client.pem",
+		})
+		srv := s.mtlsServer(addr)
+		serve("mtls", func() error { return srv.ListenAndServeTLS("", "") })
+		s.shutdownWith(ctx, srv)
+	}
+
 	// A listener per rejectable chain, the local half of the badssl matrix. Each one differs
 	// from the https listener in exactly one way — the certificate it presents — so a client
 	// refusing one of these and accepting https has said something specific. HTTP/1.1 only:

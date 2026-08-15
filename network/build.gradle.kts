@@ -41,7 +41,9 @@ fun compareVersions(
 val echTestPattern = "EchTest"
 val echConscryptTestPattern = "EchConscryptTest"
 val echClientHelloTestPattern = "EchClientHelloTest"
-val serviceMetadataTestPattern = "DohServiceMetadataTest"
+// The suites and helpers that name `Dns.Record` or `includeServiceMetadata`, neither of which
+// exists below 5.5.0.
+val serviceMetadataPatterns = listOf("DohServiceMetadataTest", "HttpsRecordTest", "DnsRecords")
 
 // The Conscrypt built from `google3-export`, if someone has fetched or built it. It is not on
 // any repository — `Conscrypt.setEchConfigList` exists on that branch and in no release — so
@@ -75,7 +77,7 @@ sourceSets {
       // release as the ECH API, so this suite needs the version check but not the Conscrypt one:
       // it asks what the resolver returned, which no TLS stack is involved in.
       if (!supportsEch) {
-        exclude("**/$serviceMetadataTestPattern.kt")
+        exclude(*serviceMetadataPatterns.map { "**/$it.kt" }.toTypedArray())
       }
     }
   }
@@ -116,6 +118,17 @@ fun Test.reportEndpointsTo(task: String) {
   val dohMatrix = layout.buildDirectory.file("test-results/doh-matrix-$task.json")
   systemProperty("testbed.doh.report", dohMatrix.get().asFile.absolutePath)
   outputs.file(dohMatrix)
+
+  // Which origins offer HTTP/3, and what OkHttp used instead. Same rule again.
+  val altSvc = layout.buildDirectory.file("test-results/altsvc-$task.json")
+  systemProperty("testbed.altsvc.report", altSvc.get().asFile.absolutePath)
+  outputs.file(altSvc)
+
+  // Revocation, pinning and CT, per platform. Recorded rather than asserted, so the file is the
+  // deliverable rather than a by-product; same one-file-per-task rule.
+  val tlsPolicy = layout.buildDirectory.file("test-results/tlspolicy-$task.json")
+  systemProperty("testbed.tlspolicy.report", tlsPolicy.get().asFile.absolutePath)
+  outputs.file(tlsPolicy)
 }
 
 val networkTest =

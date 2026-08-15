@@ -310,6 +310,100 @@ one. The fixture is reached as `localhost`, and the JDK omits SNI for a name wit
 so requiring it would assert a fact about the container's address rather than about OkHttp. It
 is in the record either way, which is the distinction this whole section runs on.
 
+What the TLS policy checks actually check
+-----------------------------------------
+
+Three things users assume are happening, and only one of them is OkHttp's to promise.
+`CertificatePinner` is OkHttp's own, so it is asserted: `PinningTest` sends a deliberately wrong
+pin at `pinning-test.badssl.com` and requires both the refusal *and* a message listing the peer's
+real pins — the pin a caller needs is exactly the one they got wrong, and an exception without it
+sends them to a search engine rather than to the fix. The positive case is against the fixture, in
+`FixturePinningTest`, because pinning a live public chain means pinning something that rotates and
+a suite that goes red when Let's Encrypt renews is one everybody learns to ignore.
+
+Revocation and Certificate Transparency are **recorded, not asserted**. The JVM does not check
+revocation unless `com.sun.net.ssl.checkRevocation` is set and the PKIX parameters say how;
+Android varies by release; OkHttp enforces no SCTs at all. A suite insisting
+`revoked.badssl.com` "must" be refused would be reporting the platform's documented behaviour as
+a defect. So the answers go to `tlspolicy-<task>.json` and onto the status page, one row per
+platform, in neutral colours — the value is the day a row changes.
+
+A timeout is not an answer, and skips. That distinction cost a red run before it was written down:
+badssl.com timed out mid-suite and a recording test failed, which put an outage in a column meant
+for policy.
+
+`ConnectionSpecTest` is the other half, against `test-server`'s port-per-version listeners. It
+asserts what `RESTRICTED_TLS` reaches and what it does not, and that a spec with an empty
+intersection fails with something a caller can read rather than a bare connection reset. What it
+deliberately does not assert is *who* refuses TLS 1.0: modern JDKs disable it through
+`jdk.tls.disabledAlgorithms` before any spec is consulted, so the alert comes back from the
+server rejecting an offer that was too new — measured, and true even of `COMPATIBLE_TLS`, which
+permits the old versions.
+
+What OkHttp puts on the wire
+----------------------------
+
+`test-server`'s raw listener is not an HTTP server: it echoes the request head back byte for byte.
+That matters because `/anything` reports what Go *parsed* — `net/http` canonicalises header names
+and keeps no record of their order, and both are half of how a CDN fingerprints a client. It is
+the only place the difference is visible, and `HttpSemanticsTest.theRequestHeadIsRecorded` is
+where it is read.
+
+Almost nothing about it is asserted, for the same reason `ClientHelloTest` asserts almost nothing:
+the header set is a platform and version decision, and pinning it would turn an OkHttp upgrade
+into a failed test. What is asserted is that the request is well-formed and carries
+`Accept-Encoding: gzip`, which OkHttp adds on the caller's behalf and transparent decompression
+depends on.
+
+The HTTPS record parameters nobody publishes
+--------------------------------------------
+
+`HttpsRecordTest` asks the public names what their `HTTPS` records carry, and they all carry the
+same two things: `alpn` and the address hints. RFC 9460 defines rather more, and the rest is close
+to unobtainable in the wild — which is exactly why a client's handling of it goes untested.
+
+So the ECH fixture's DoH resolver now publishes them, one name per parameter, each differing from
+an ordinary record in a single way, and `SvcParamTest` asks OkHttp what it makes of them:
+
+| Name | What it publishes | What OkHttp does |
+|---|---|---|
+| `nodefaultalpn.svcb.test` | `alpn=h2` with `no-default-alpn` | reports `[h2]` — the implied `http/1.1` is suppressed |
+| `mandatory.svcb.test` | `mandatory=alpn` | uses the record rather than discarding it |
+| `unknownparam.svcb.test` | an unregistered key alongside `alpn` | ignores what it does not recognise |
+| `alias.svcb.test` | AliasMode, priority 0 | surfaces no metadata; the name still resolves via its A record |
+
+The last row is a finding rather than a promise: OkHttp does not follow AliasMode, and following
+one is arguably a resolver's job. What the suite asserts there is the half that *is* a promise —
+an AliasMode record must not break ordinary resolution.
+
+The resolver is the one the Android ECH suite runs, started here in `doh` mode alone with a
+certificate this test mints and hands over in the environment. It needs `Dns.Record`, so it is
+left out of the source set below OkHttp 5.5.0 — the same gate the network module uses, now in the
+container module too.
+
+Client certificates
+-------------------
+
+`ClientCertificateTest` runs against a listener that *requires* one. That distinction is the whole
+suite: `test-server`'s other TLS listeners request a certificate and serve a client that has none,
+so "presented" and "ignored" are indistinguishable there. The `mtls` listener verifies against the
+fixture CA and `/client.pem` serves an identity it signed — fetched at run time, because the CA is
+minted per container and anything committed here could not have been signed by it.
+
+The case worth knowing about is the last one. A certificate from a CA the server does not accept
+behaves *exactly* like having none: the server advertises which issuers it will take, the JDK's key
+manager finds no match among its identities, and sends nothing. So the server reports a missing
+certificate rather than an untrusted one, and the client's own logs agree with it. Anyone debugging
+"I configured a certificate and the server says I did not" is meeting this, and the test asserts
+the sameness rather than wishing it were otherwise.
+
+`PublicClientCertificateTest` is the reality check against `client.badssl.com`, which requests
+rather than requires and answers `400` when nothing arrives — worth knowing, because it means a
+missing client certificate can reach an application as an HTTP status rather than as a TLS error.
+It loads badssl's published PKCS#12 through a `KeyStore` and a `KeyManagerFactory` rather than
+`okhttp-tls`: `HandshakeCertificates` has no route in from a PKCS#12, and converting it first
+would mean testing the conversion.
+
 The resolver matrix
 -------------------
 
@@ -331,6 +425,21 @@ One outcome has its own name. A filtering resolver can *withhold* an answer, or 
 is much quieter than a resolution error, so it is recorded as `sinkholed` rather than `resolved`.
 A resolver the preflight found unreachable is `unavailable` and is never mistaken for one that
 said no.
+
+Three more suites hang off the same machinery. `HttpsRecordTest` asks what an `HTTPS` record's
+parameters *mean* rather than whether they arrived — most usefully that RFC 9460 §7.1.1 implies
+the default ALPN, so a record saying `alpn=h3,h2` means three protocols and not two, and that an
+absent `port` means 443 rather than 0. `DnsFailureTest` asks what a resolution failure looks like
+to a caller: SERVFAIL and NXDOMAIN have to be told apart, and a resolver answering `429` has to
+*not* arrive as `UnknownHostException`, or code catching that to mean "bad name" silently
+mishandles a rate limit. `HappyEyeballsTest` puts an unreachable address first and requires the
+connection to happen anyway.
+
+Two of those found something worth keeping. Some resolvers turn a DNSSEC validation failure into
+an HTTP `502`, which reaches a caller as a plain `IOException` — so the matrix grew an `errored`
+outcome to hold it, distinct from both "no answer" and "unreachable". And every client in the
+Happy Eyeballs suite sets `Proxy.NO_PROXY`, because with a proxy in the way OkHttp connects to the
+proxy and the pinned addresses are never dialled: the suite would pass having tested nothing.
 
 `DohServiceMetadataTest` asks the other half: what an `HTTPS` record carries, through `newCall`
 and `Dns.Record.ServiceMetadata`, since an ECH config list has nowhere else to come from. That
