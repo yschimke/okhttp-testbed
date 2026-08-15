@@ -14,6 +14,10 @@ on:
     paths:
       - 'site/**'
       - '.github/workflows/pages.yml'
+  pull_request:
+    paths:
+      - 'site/**'
+      - '.github/workflows/pages.yml'
   workflow_dispatch:
 
 permissions:
@@ -26,10 +30,14 @@ permissions:
   issues: read
 
 # Never two deploys at once, and never cancel one half-done: the deployed site carries the
-# history, so a cancelled deploy would lose whatever it was about to publish.
+# history, so a cancelled deploy would lose whatever it was about to publish. PR validation
+# has its own per-branch group so it cannot hold up a production deployment.
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: >-
+    ${{ github.event_name == 'pull_request'
+        && format('pages-validation-{0}', github.ref)
+        || 'pages' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # Every workflow whose results the page reports. Each one's most recent completed run on
@@ -38,15 +46,33 @@ env:
   TEST_WORKFLOWS: containers.yml network.yml android-ech.yml
 
 jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Validate result collector
+        run: python3 -m compileall -q site/tools
+
+      - name: Validate JavaScript
+        run: |
+          for script in site/assets/*.js; do
+            node --check "$script"
+          done
+
   build-and-deploy:
     # Only runs that report on main get published. A pull request's test run is about the
     # pull request; it must not overwrite the status of the repository.
     if: >-
-      github.event_name != 'workflow_run'
-      || (github.event.workflow_run.head_branch == 'main'
-          && github.event.workflow_run.event != 'pull_request'
-          && github.event.workflow_run.conclusion != 'cancelled'
-          && github.event.workflow_run.conclusion != 'skipped')
+      github.event_name != 'pull_request'
+      && (github.event_name != 'workflow_run'
+          || (github.event.workflow_run.head_branch == 'main'
+              && github.event.workflow_run.event != 'pull_request'
+              && github.event.workflow_run.conclusion != 'cancelled'
+              && github.event.workflow_run.conclusion != 'skipped'))
 
     runs-on: ubuntu-latest
 

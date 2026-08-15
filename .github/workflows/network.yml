@@ -14,10 +14,26 @@ on:
       - main
     paths:
       - 'network/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle/**'
+      - 'gradlew'
+      - 'gradlew.bat'
+      - 'conscrypt/fetch-conscrypt.sh'
+      - 'conscrypt/release-tag.sh'
+      - 'conscrypt/pinned.properties'
       - '.github/workflows/network.yml'
   pull_request:
     paths:
       - 'network/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle/**'
+      - 'gradlew'
+      - 'gradlew.bat'
+      - 'conscrypt/fetch-conscrypt.sh'
+      - 'conscrypt/release-tag.sh'
+      - 'conscrypt/pinned.properties'
       - '.github/workflows/network.yml'
   schedule:
     # Daily, so a change at one of the servers these tests call — or in a published
