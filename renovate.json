@@ -5,7 +5,7 @@
   ],
   "packageRules": [
     {
-      "description": "Stay on JUnit 5. JUnit 6 requires Java 17+ and a coordinated bump of the android-junit5 plugin, so it is not a drop-in upgrade here.",
+      "description": "Keep the JVM test suites on JUnit 5. JUnit 6 requires Java 17+, so it is not a drop-in upgrade here.",
       "matchManagers": [
         "gradle"
       ],

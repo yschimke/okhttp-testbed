@@ -1,7 +1,6 @@
 plugins {
   // AGP 9 brings Kotlin support with it — applying the Kotlin Android plugin here fails.
   alias(libs.plugins.android.library)
-  alias(libs.plugins.android.junit5)
 }
 
 // The version of OkHttp under test. This suite defaults to the snapshot rather than to the
@@ -36,22 +35,11 @@ android {
     // An AndroidJUnitRunner that calls OkHttp.initialize first. See EchTestRunner for why the
     // library's own androidx Startup initializer doesn't cover an instrumentation APK.
     testInstrumentationRunner = "okhttp.testbed.android.ech.EchTestRunner"
-    testInstrumentationRunnerArguments +=
-      mapOf(
-        // The suite is JUnit 5, as the JVM suites are.
-        "runnerBuilder" to "de.mannodermaus.junit5.AndroidJUnit5Builder",
-      )
   }
 
   compileOptions {
     sourceCompatibility(JavaVersion.VERSION_11)
     targetCompatibility(JavaVersion.VERSION_11)
-
-    // JUnit 5 is compiled against Java 8 APIs — `java.util.function`, `Optional`, `java.time` —
-    // which Android only has from API 26. The suite runs on API 21 upwards, so without this the
-    // runner dies with NoClassDefFoundError on the oldest emulators in the matrix before a single
-    // test is reached. Desugaring is what makes "minSdk 21" true of the tests as well as the code.
-    isCoreLibraryDesugaringEnabled = true
   }
 
   testOptions {
@@ -60,8 +48,6 @@ android {
 }
 
 dependencies {
-  coreLibraryDesugaring(libs.desugar.jdk.libs)
-
   androidTestImplementation("com.squareup.okhttp3:okhttp:$okhttpVersion")
   androidTestImplementation("com.squareup.okhttp3:okhttp-dnsoverhttps:$okhttpVersion")
 
@@ -72,10 +58,8 @@ dependencies {
   androidTestImplementation("com.squareup.okhttp3:okhttp-android:$okhttpVersion")
 
   androidTestImplementation(libs.assertk)
-  androidTestImplementation(libs.junit.jupiter.api)
-  androidTestImplementation(libs.junit5android.core)
+  androidTestImplementation(libs.junit4)
   androidTestImplementation(libs.androidx.test.runner)
-  androidTestRuntimeOnly(libs.junit5android.runner)
 }
 
 // `check` doesn't run instrumentation tests, so the public-API check has to be wired to the

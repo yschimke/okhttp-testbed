@@ -31,9 +31,9 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.Route
 import okhttp3.dnsoverhttps.DnsOverHttps
-import org.junit.jupiter.api.Assumptions.assumeTrue
-import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Test
+import org.junit.Assume.assumeTrue
+import org.junit.Before
+import org.junit.Test
 
 /**
  * [okhttp.testbed.network.EchTest]'s cases, on the one platform where they can all pass.
@@ -56,9 +56,9 @@ import org.junit.jupiter.api.Test
 class PublicEncryptedClientHelloTest {
   private lateinit var client: OkHttpClient
 
-  @BeforeEach
+  @Before
   fun setUp() {
-    assumeTrue(Build.VERSION.SDK_INT >= 37, "ECH requires Android API 37")
+    assumeTrue("ECH requires Android API 37", Build.VERSION.SDK_INT >= 37)
 
     val bootstrapClient = OkHttpClient()
 
