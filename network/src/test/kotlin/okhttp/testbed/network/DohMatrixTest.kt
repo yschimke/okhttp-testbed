@@ -87,15 +87,42 @@ class DohMatrixTest {
       // Withheld and genuinely absent arrive the same way over DoH: the resolver returns no
       // answer and OkHttp raises this. The addresses column is what tells them apart by eye —
       // a filtered name at some resolvers is a name that answers at others.
-      Answer(Outcome.UNRESOLVED, detail = e.message.orEmpty())
+      //
+      // A resolver that answered HTTP rather than DNS arrives this way too, because `Dns.lookup`
+      // declares nothing else, so the two are separated on the wrapped failure and not on the
+      // type. See [httpFailure].
+      when (val httpFailure = e.httpFailure()) {
+        null -> Answer(Outcome.UNRESOLVED, detail = e.message.orEmpty())
+        else -> Answer(Outcome.ERRORED, detail = httpFailure.message.orEmpty())
+      }
     } catch (e: IOException) {
-      // Not a DNS answer at all. Some resolvers turn a validation failure into an HTTP 502, which
-      // is how this outcome was discovered rather than designed: `sigfail` erroring at one
-      // resolver and resolving at another is a real difference, and calling it "no answer" would
-      // have filed it under the wrong heading.
+      // Unreachable through `DnsOverHttps`, which wraps everything above. Kept because `ask` is
+      // written against the `Dns` interface rather than against one implementation, and an
+      // implementation that let an `IOException` out belongs in this column rather than uncaught.
       Answer(Outcome.ERRORED, detail = e.message.orEmpty())
     }
   }
+
+  /**
+   * The HTTP failure behind a resolution failure, if there was one.
+   *
+   * Some resolvers turn a validation failure into an HTTP `502`, which is how this outcome was
+   * discovered rather than designed: `sigfail` erroring at one resolver and resolving at another
+   * is a real difference, and calling it "no answer" would have filed it under the wrong heading.
+   * But it does not arrive as an `IOException` a caller can catch — `DnsOverHttps.throwBestFailure`
+   * puts it in `cause`, or in `suppressed` when the other query failed first — so this walks for
+   * it. [DnsFailureTest] asserts that shape; this is what reads it.
+   *
+   * Note the failure can be lost entirely: when the *first* failure is itself an
+   * `UnknownHostException`, OkHttp rethrows it and drops the rest, so a name whose A query 502s
+   * and whose AAAA query NXDOMAINs may record as `unresolved`. Under-reporting this column rather
+   * than over-reporting it is the right way round.
+   */
+  private fun Throwable.httpFailure(): IOException? =
+    generateSequence(this) { it.cause }
+      .flatMap { sequenceOf(it) + it.suppressed.asSequence() }
+      .filterIsInstance<IOException>()
+      .firstOrNull { it !is UnknownHostException }
 
   /** What a disagreement about this name would mean. */
   enum class Expectation {

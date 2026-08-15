@@ -450,16 +450,21 @@ Three more suites hang off the same machinery. `HttpsRecordTest` asks what an `H
 parameters *mean* rather than whether they arrived — most usefully that RFC 9460 §7.1.1 implies
 the default ALPN, so a record saying `alpn=h3,h2` means three protocols and not two, and that an
 absent `port` means 443 rather than 0. `DnsFailureTest` asks what a resolution failure looks like
-to a caller: SERVFAIL and NXDOMAIN have to be told apart, and a resolver answering `429` has to
-*not* arrive as `UnknownHostException`, or code catching that to mean "bad name" silently
-mishandles a rate limit. `HappyEyeballsTest` puts an unreachable address first and requires the
-connection to happen anyway.
+to a caller: SERVFAIL and NXDOMAIN have to be told apart, and a resolver answering `429` — which is
+nothing to do with the name — has to be tellable from a name that does not exist.
+`HappyEyeballsTest` puts an unreachable address first and requires the connection to happen anyway.
 
-Two of those found something worth keeping. Some resolvers turn a DNSSEC validation failure into
-an HTTP `502`, which reaches a caller as a plain `IOException` — so the matrix grew an `errored`
-outcome to hold it, distinct from both "no answer" and "unreachable". And every client in the
-Happy Eyeballs suite sets `Proxy.NO_PROXY`, because with a proxy in the way OkHttp connects to the
-proxy and the pinned addresses are never dialled: the suite would pass having tested nothing.
+Two of those found something worth keeping. The first is the answer to that last question, and it
+is not the obvious one: `Dns.lookup` declares `UnknownHostException` and nothing else, so a
+resolver answering `429` arrives as exactly that, with a message that is the bare hostname and the
+`IOException("response: 429 …")` only as its cause. The type cannot be caught for, which is the
+platform's convention rather than an OkHttp quirk — `InetAddress.getAllByName` flattens every
+`getaddrinfo` error, retryable and not, into the same exception, and Android's `DnsResolver` is the
+one mainstream API that doesn't, by not being `InetAddress`-shaped at all. So the matrix's `errored`
+outcome — for resolvers that turn a DNSSEC validation failure into an HTTP `502` — is read off the
+cause chain rather than off a distinct exception. The second: every client in the Happy Eyeballs
+suite sets `Proxy.NO_PROXY`, because with a proxy in the way OkHttp connects to the proxy and the
+pinned addresses are never dialled: the suite would pass having tested nothing.
 
 `DohServiceMetadataTest` asks the other half: what an `HTTPS` record carries, through `newCall`
 and `Dns.Record.ServiceMetadata`, since an ECH config list has nowhere else to come from. That
