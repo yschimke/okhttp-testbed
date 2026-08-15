@@ -46,8 +46,9 @@ jobs:
       # artifact name, and by the metadata that tells the status page what the suite ran on.
       # Two copies of an API level is how a page ends up confidently reporting the wrong device.
       #
-      # Per-commit runs boot one emulator, API 37, because that is where ECH works and those
-      # runs are about this repository. The daily run covers the range OkHttp supports:
+      # Per-commit runs boot one emulator, API 37.1, because that is where ECH works and those
+      # runs are about this repository. The daily run also covers the latest 37.2 beta, so an
+      # upcoming Android quarterly release can expose an ECH regression before it is stable:
       #
       #   21  the module's minSdk, and OkHttp 5's. Every case skips — the fixture origin is
       #       TLS 1.3 only — but the run still installs the instrumentation APK and calls
@@ -57,15 +58,17 @@ jobs:
       #       OkHttp cannot use must produce an ordinary handshake to the real name, not a
       #       failed call.
       #   35  the same, on a recent release used by devices in the field.
-      #   37  where `android.net.ssl.EchConfigList` exists and ECH is actually performed.
+      #   37.1  the current stable image, where `android.net.ssl.EchConfigList` exists and ECH
+      #         is actually performed.
+      #   37.2-beta3  the next quarterly release, exercising the same ECH path before release.
       #
       # Play Store images exist only for the newest level, so the older rows take the plain
       # `google_apis` image — and API 21, which predates those, the `default` one.
       matrix: >-
         ${{ fromJSON(
           (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-          && '{"include":[{"apiLevel":"21","target":"default","arch":"x86_64"},{"apiLevel":"30","target":"google_apis","arch":"x86_64"},{"apiLevel":"35","target":"google_apis","arch":"x86_64"},{"apiLevel":"37.0","target":"google_apis_playstore_ps16k","arch":"x86_64"}]}'
-          || '{"include":[{"apiLevel":"37.0","target":"google_apis_playstore_ps16k","arch":"x86_64"}]}'
+          && '{"include":[{"apiLevel":"21","target":"default","arch":"x86_64"},{"apiLevel":"30","target":"google_apis","arch":"x86_64"},{"apiLevel":"35","target":"google_apis","arch":"x86_64"},{"apiLevel":"37.1","target":"google_apis_playstore_ps16k","arch":"x86_64"},{"apiLevel":"37.2-beta3","target":"google_apis_playstore_ps16k","arch":"x86_64"}]}'
+          || '{"include":[{"apiLevel":"37.1","target":"google_apis_playstore_ps16k","arch":"x86_64"}]}'
         ) }}
 
     steps:
@@ -88,7 +91,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       # ECH is applied by OkHttp's Android platform through android.net.ssl.EchConfigList, so
-      # only the API 37 row performs it; the rest assert what a device that cannot do ECH must
+      # only the API 37 rows perform it; the rest assert what a device that cannot do ECH must
       # do instead. See the matrix above, and EncryptedClientHelloTest.
       - name: Run the ECH suite against the fixture containers
         uses: reactivecircus/android-emulator-runner@v2.38.0
@@ -103,7 +106,7 @@ jobs:
             -noaudio
             -no-boot-anim
             -camera-back none
-            -memory 2048
+            -memory 4096
           script: android-ech/run-ech-test.sh
 
       # What the XML can't say: which OkHttp version this resolved to, and which run

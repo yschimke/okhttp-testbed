@@ -594,7 +594,7 @@ once. They run on the schedule, and on demand:
 | `containers (…, JDK 8 · 11 · 17 · 21 · 25)` | the snapshot on 17 and up, the pinned release on all five | schedule and manual runs only |
 | `network / compile`              | the `okhttp` version in `libs.versions.toml` | push and pull request  |
 | `network (…, JDK 8 · 11 · 17 · 21 · 25)` | the snapshot on 17 and up, the pinned release on all five | schedule and manual runs only |
-| `android-ech (…, API 21 · 30 · 35 · 37)` | the snapshot                 | API 37 on every event, the rest on schedule and manual runs only |
+| `android-ech (…, API 21 · 30 · 35 · 37.1 · 37.2-beta3)` | the snapshot       | API 37.1 on every event, the rest on schedule and manual runs only |
 
 What keeps the network module honest between scheduled runs is `network / compile`, which
 runs on every push and pull request touching `network/**` and calls nobody: it compiles the
@@ -619,7 +619,7 @@ commit here and isn't worth asking more than once a day:
 | Axis        | Daily coverage | Why those                                                    |
 |-------------|----------------|--------------------------------------------------------------|
 | JDK         | 8, 11, 17, 21, 25 | 8 is the floor, because it is OkHttp's: JUnit 5, Testcontainers, assertk and OkHttp are all Java 8 bytecode, and the toolchain split above is what stops Gradle's own need for 17 setting the floor instead. 25 is the current LTS and the ceiling. 11 and 17 are the LTS releases applications are still on. 21 earns its place twice over — it is the LTS most builds are on, and the one the Loom finding is about: `BasicLoomTest` is `@EnabledForJreRange(min = JAVA_21)`, and JEP 491 changes its answer on 24+, so the 21 and 25 rows are the before and after of that. Java 26 is out and would work — Kotlin 2.4 targets it — but the LTS ceiling is the one users are on. 8 and 11 test the pinned release only: what they are asked is whether the artifact people can depend on today still works where they are |
-| Android API | 21, 29, 34, 37 | 21 is the module's `minSdk` and OkHttp 5's. 29 is the first level with TLS 1.3, and so the first that can reach the fixture at all. 34 is where most devices in the field are. 37 is where ECH exists. What each level actually establishes is in the table under [The ECH suite](#the-ech-suite) |
+| Android API | 21, 30, 35, 37.1, 37.2-beta3 | 21 is the module's `minSdk` and OkHttp 5's. 30 is an older level with TLS 1.3, 35 represents recent devices in the field, and both 37 images exercise ECH. The beta row catches quarterly-release regressions before they become stable. What each level actually establishes is in the table under [The ECH suite](#the-ech-suite) |
 
 Four scheduled workflows, spread across the day rather than started together — `containers`
 at 02:17 UTC, `test-server` at 06:41, `network` at 10:43, `android-ech` at 14:47. Each is
@@ -667,7 +667,8 @@ rather than a matrix of them — the snapshot — because that is the only versi
 the suite needs; its matrix is over emulators instead. Every job boots one, so it is slower
 and more failure-prone than the container jobs; that is the price of testing ECH at all, and
 it is why it is a separate workflow whose colour doesn't mask the container suites'. Push and
-pull request runs boot only the API 37 emulator, which is the one that can do ECH.
+pull request runs boot only the stable API 37.1 emulator, which is the one that can do ECH;
+scheduled and manual runs also boot API 37.2-beta3.
 
 Both workflows write a `run-metadata.json` into their artifact recording which OkHttp
 version they actually resolved, and which run produced it. That is what lets the status site
