@@ -151,6 +151,27 @@ adb reverse tcp:8053 "tcp:$doh_host_port"
 adb reverse tcp:443 "tcp:$target_host_port"
 adb reverse tcp:8443 "tcp:$target_host_port"
 
+# Boot completion does not mean that the emulator has installed an outbound route. The public
+# suite resolves through Cloudflare's DoH endpoint, so wait for the device itself to reach that
+# address before turning one missing route into the same failure in every public test case.
+#
+# This deliberately probes an IP address: DNS is the thing the public suite is trying to test.
+wait_for_public_network() {
+  local deadline=$((SECONDS + ${ANDROID_NETWORK_TIMEOUT_SECONDS:-60}))
+
+  while ((SECONDS < deadline)); do
+    if adb shell ping -c 1 -W 2 1.1.1.1 >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+
+  echo "The emulator did not acquire an outbound route to 1.1.1.1; skipping the public ECH suite." >&2
+  echo "Device routes:" >&2
+  adb shell ip route show >&2 || true
+  return 1
+}
+
 # One instrumentation run per suite, because the two report differently and Gradle writes both
 # to the same place. `results_dir` is moved aside after each run so the workflow can upload them
 # together; without that the second run would overwrite the first.
@@ -204,7 +225,13 @@ run_suite() {
 # the JVM `network` suites treat the same servers the same way. The XML still records what
 # happened, which is what the status page reads.
 public_status=0
-run_suite PublicEncryptedClientHelloTest || public_status=$?
+public_arguments=()
+device_api_level="$(adb shell getprop ro.build.version.sdk 2>/dev/null | tr -d '\r\n')"
+if [[ "$device_api_level" =~ ^[0-9]+$ ]] && ((device_api_level >= 37)) &&
+  ! wait_for_public_network; then
+  public_arguments+=("-Pandroid.testInstrumentationRunnerArguments.publicNetworkAvailable=false")
+fi
+run_suite PublicEncryptedClientHelloTest "${public_arguments[@]}" || public_status=$?
 if [ "$public_status" -ne 0 ]; then
   echo "PublicEncryptedClientHelloTest failed; recorded, not fatal." >&2
 fi

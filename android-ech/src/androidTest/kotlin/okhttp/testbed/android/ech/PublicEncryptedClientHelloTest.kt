@@ -16,6 +16,7 @@
 package okhttp.testbed.android.ech
 
 import android.os.Build
+import androidx.test.platform.app.InstrumentationRegistry
 import assertk.assertThat
 import assertk.assertions.contains
 import assertk.assertions.doesNotContain
@@ -59,6 +60,10 @@ class PublicEncryptedClientHelloTest {
   @Before
   fun setUp() {
     assumeTrue("ECH requires Android API 37", Build.VERSION.SDK_INT >= 37)
+    assumeTrue(
+      "the emulator has no outbound route to the public DoH resolver",
+      InstrumentationRegistry.getArguments().getString("publicNetworkAvailable") != "false",
+    )
 
     val bootstrapClient = OkHttpClient()
 

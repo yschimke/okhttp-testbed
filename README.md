@@ -526,7 +526,9 @@ It is there so the public-server results can be read across platforms: the JVM r
 status page and the Android row are then the same assertions against the same servers, and
 the only variable left between them is the TLS stack. It runs first, and its failures do not
 fail the job, for the same reason nothing in `network` gates — those servers belong to other
-people. The fixture suite that follows it does gate.
+people. Before it runs, the script waits for the emulator itself to reach `1.1.1.1`; if the
+device never acquires an outbound route, the public cases skip rather than all reporting the
+same infrastructure failure. The fixture suite that follows it does gate.
 
 ECH is Android-only in OkHttp today: JVM platforms accept the config list and ignore it. The
 `network` suite is where that shows up, from the other direction — `EchTest` came from
