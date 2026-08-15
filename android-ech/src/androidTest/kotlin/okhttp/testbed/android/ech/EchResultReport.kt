@@ -16,7 +16,9 @@
 package okhttp.testbed.android.ech
 
 import android.util.Base64
+import android.util.Log
 import androidx.test.platform.app.InstrumentationRegistry
+import java.io.IOException
 
 /** ECHConfigLists observed on Android, pulled from the test APK after instrumentation finishes. */
 object EchResultReport {
@@ -46,6 +48,12 @@ object EchResultReport {
   }
 
   private fun write() {
+    val report =
+      InstrumentationRegistry
+        .getInstrumentation()
+        .context.filesDir
+        .resolve("ech-results.json")
+
     val rows =
       observations.values.joinToString(",\n") { observation ->
         val attempts =
@@ -59,11 +67,28 @@ object EchResultReport {
         """    {"suite":${observation.suite.json()},"case":${observation.case.json()},"server":${observation.server.json()},"platform":"ANDROID","attempts":[$attempts]}"""
       }
 
-    InstrumentationRegistry
-      .getInstrumentation()
-      .context.filesDir
-      .resolve("ech-results.json")
-      .writeText("{\n  \"observations\": [\n$rows\n  ]\n}\n")
+    // `filesDir` names a directory; it doesn't promise one exists. Nothing creates it for an
+    // instrumentation APK that is never launched as an app, so the first write lands on a
+    // missing parent and fails with ENOENT — which is what the JVM report's `mkdirs()` is for.
+    //
+    // Catching that failure rather than letting it out is the more important half. `record` is
+    // called before a case makes its assertions, so that evidence survives one; the same
+    // ordering means a throw here replaces every real result with this one. It did: both
+    // suites reported nothing but
+    //
+    //     java.io.FileNotFoundException:
+    //         /data/user/0/okhttp.testbed.android.ech.test/files/ech-results.json:
+    //         open failed: ENOENT (No such file or directory)
+    //
+    // for all nine cases. Evidence is a by-product of a test, and losing it is worth a line in
+    // the log, not the result of the run. `run-ech-test.sh` already drops a report it can't
+    // read, and `collect_results.py` reads whichever reports it finds.
+    try {
+      report.parentFile?.mkdirs()
+      report.writeText("{\n  \"observations\": [\n$rows\n  ]\n}\n")
+    } catch (e: IOException) {
+      Log.w("EchResultReport", "Failed to write $report", e)
+    }
   }
 
   private fun String.json(): String {
