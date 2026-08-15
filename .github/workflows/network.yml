@@ -100,21 +100,11 @@ jobs:
         # a client hello would show up as that row turning green, and nothing else in this
         # repository would notice.
         #
-        # This costs the public servers more passes a day than it used to. Each is still a
-        # handful of requests, and bounded by the schedule the way the whole module is — the
+        # The daily schedule runs both the pinned release and the snapshot on every JDK. This
+        # costs the public servers more passes a day than it used to, but each is still a
+        # handful of requests and bounded by the schedule the way the whole module is — the
         # reason these suites don't run per commit is unchanged.
         javaVersion: [8, 11, 17, 21, 25]
-
-        # The old JDKs test the release and not the snapshot. What they are asked is whether
-        # the artifact people can depend on today still works where they are, which the release
-        # answers; the snapshot exists to catch a regression before it ships, and that is worth
-        # knowing on the JDKs a release would be adopted on. It also keeps the daily cost to
-        # other people's servers to eight passes rather than ten.
-        exclude:
-          - okhttpVersion: '5.5.0-SNAPSHOT'
-            javaVersion: 8
-          - okhttpVersion: '5.5.0-SNAPSHOT'
-            javaVersion: 11
 
     steps:
       - name: Checkout
