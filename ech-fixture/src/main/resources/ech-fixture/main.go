@@ -297,6 +297,17 @@ func svcParamFixture(name string, targetPort int) ([]byte, bool) {
 		result = appendSvcParam(result, 3, port)
 		return result, true
 
+	// `alpn` naming a protocol the client cannot speak, and *not* naming one it can. A client with
+	// no HTTP/3 has to read this without concluding the origin is unreachable, and without
+	// inventing `h2` to make the list usable — issue #12's third bullet, which is a DNS question
+	// rather than a handshake one.
+	case "h3only.svcb.test":
+		result := appendUint16(nil, 1)
+		result = append(result, 0)
+		result = appendSvcParam(result, 1, []byte{2, 'h', '3'})
+		result = appendSvcParam(result, 3, port)
+		return result, true
+
 	// An unregistered parameter key alongside ordinary ones. The registry is designed to be
 	// extended, so a client must ignore what it does not recognise rather than reject the record
 	// — forward compatibility, tested the only way it can be.

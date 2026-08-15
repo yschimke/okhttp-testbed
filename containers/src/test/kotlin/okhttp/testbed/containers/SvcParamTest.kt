@@ -163,6 +163,23 @@ class SvcParamTest {
     ).isEmpty()
   }
 
+  /**
+   * A record offering only a protocol this client cannot speak.
+   *
+   * `alpn=h3` with no `h2` is the shape that would break connection setup if a client read the
+   * list as a requirement: OkHttp has no HTTP/3, and concluding the origin is unreachable would be
+   * wrong — `http/1.1` is implied into the set and is perfectly usable. The other half of the
+   * assertion is that `h2` is *not* invented to make the list more palatable, because a client
+   * that did would try a protocol the origin never offered.
+   */
+  @Test
+  fun anAlpnListWithoutH2IsReadWithoutInventingIt() {
+    val alpn = metadataFor(H3_ONLY).alpnIds
+
+    assertThat(alpn, name = "$H3_ONLY ALPN ids").isNotNull().contains(Protocol.HTTP_1_1)
+    assertThat(alpn!!, name = "h2, which the record does not offer").doesNotContain(Protocol.HTTP_2)
+  }
+
   private fun metadataFor(hostname: String): Dns.Record.ServiceMetadata {
     val metadata = dns.records(hostname).filterIsInstance<Dns.Record.ServiceMetadata>()
     assertThat(metadata, name = "$hostname HTTPS records").isNotEmpty()
@@ -211,6 +228,7 @@ class SvcParamTest {
     const val NO_DEFAULT_ALPN = "nodefaultalpn.svcb.test"
     const val MANDATORY = "mandatory.svcb.test"
     const val UNKNOWN_PARAM = "unknownparam.svcb.test"
+    const val H3_ONLY = "h3only.svcb.test"
 
     /**
      * The name the resolver is reached by, and the one its certificate covers.
