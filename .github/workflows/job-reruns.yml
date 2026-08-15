@@ -10,6 +10,12 @@ on:
     paths:
       - '.github/workflows/job-reruns.yml'
       - '.github/scripts/job_reruns.py'
+      - '.github/scripts/test_job_reruns.py'
+  pull_request:
+    paths:
+      - '.github/workflows/job-reruns.yml'
+      - '.github/scripts/job_reruns.py'
+      - '.github/scripts/test_job_reruns.py'
   issues:
     types: [edited]
   workflow_dispatch:
@@ -23,18 +29,40 @@ permissions:
   issues: write
 
 # Several scheduled workflows can finish together. Keep their issue updates in order so a
-# slower API response cannot overwrite a newer view of the runs.
+# slower API response cannot overwrite a newer view of the runs. PR validation has its own
+# per-branch group so it neither blocks nor gets blocked by those live updates.
 concurrency:
-  group: job-reruns-dashboard
-  cancel-in-progress: false
+  group: >-
+    ${{ github.event_name == 'pull_request'
+        && format('job-reruns-validation-{0}', github.ref)
+        || 'job-reruns-dashboard' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  update-issue:
+  validate:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1
+
+      - name: Test dashboard logic
+        run: python3 .github/scripts/test_job_reruns.py
+
+  update-issue:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      # Cheap enough to gate every live invocation, including issue edits and workflow-run
+      # completions. A broken dashboard helper should fail before it mutates the tracking issue
+      # or dispatches another workflow.
+      - name: Test dashboard logic
+        run: python3 .github/scripts/test_job_reruns.py
 
       - name: Dispatch selected jobs and update issue
         env:
