@@ -592,7 +592,7 @@ once. They run on the schedule, and on demand:
 | `containers (…, JDK 8 · 11 · 17 · 21 · 25)` | the snapshot on 17 and up, the pinned release on all five | schedule and manual runs only |
 | `network / compile`              | the `okhttp` version in `libs.versions.toml` | push and pull request  |
 | `network (…, JDK 8 · 11 · 17 · 21 · 25)` | the snapshot on 17 and up, the pinned release on all five | schedule and manual runs only |
-| `android-ech (…, API 21 · 29 · 34 · 37)` | the snapshot                 | API 37 on every event, the rest on schedule and manual runs only |
+| `android-ech (…, API 21 · 30 · 35 · 37)` | the snapshot                 | API 37 on every event, the rest on schedule and manual runs only |
 
 What keeps the network module honest between scheduled runs is `network / compile`, which
 runs on every push and pull request touching `network/**` and calls nobody: it compiles the
