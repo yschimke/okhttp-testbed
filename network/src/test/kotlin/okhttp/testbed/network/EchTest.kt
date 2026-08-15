@@ -124,6 +124,7 @@ class EchTest {
 
     val call = client.newCall(Request("https://cloudflare-ech.com/cdn-cgi/trace".toHttpUrl()))
     call.execute().use { response ->
+      record(call, platform, "cloudflareUsesEch", "cloudflare-ech.com")
       assertThat(call.routeList.routes.single().echConfigList).isNotNull()
 
       val body = response.body.string()
@@ -139,6 +140,7 @@ class EchTest {
 
     val call = client.newCall(Request("https://tls-ech.dev/".toHttpUrl()))
     call.execute().use { response ->
+      record(call, platform, "echIsAcceptedOnTlsEchDev", "tls-ech.dev")
       assertThat(call.routeList.routes.single().echConfigList).isNotNull()
 
       val body = response.body.string()
@@ -158,6 +160,7 @@ class EchTest {
 
     val call = client.newCall(Request("https://stale.tls-ech.dev/".toHttpUrl()))
     call.execute().use { response ->
+      record(call, platform, "echIsRetriedOnStaleTlsEchDev", "stale.tls-ech.dev")
       val routes = call.routeList.routes
       assertThat(routes).hasSize(2)
       assertThat(routes[0].echConfigList).isNotNull()
@@ -193,6 +196,7 @@ class EchTest {
 
     val call = client.newCall(Request("https://wrong.tls-ech.dev/".toHttpUrl()))
     call.execute().use { response ->
+      record(call, platform, "echIsAcceptedOnWrongTlsEchDev", "wrong.tls-ech.dev")
       assertThat(call.routeList.routes.single().echConfigList).isNotNull()
 
       assertThat(response.code).isEqualTo(302)
@@ -211,6 +215,7 @@ class EchTest {
 
     val call = client.newCall(Request("https://tls12.tls-ech.dev/".toHttpUrl()))
     call.execute().use { response ->
+      record(call, platform, "tlsIsNotUsedOnTls12TlsEchDev", "tls12.tls-ech.dev")
       val routes = call.routeList.routes
       assertThat(routes).hasSize(2)
       assertThat(routes[0].echConfigList).isNotNull()
@@ -231,11 +236,37 @@ class EchTest {
 
     val call = client.newCall(Request("https://defo.ie/ech-check.php".toHttpUrl()))
     call.execute().use { response ->
+      record(call, platform, "echIsAcceptedOnDefoIe", "defo.ie")
       assertThat(call.routeList.routes.single().echConfigList).isNotNull()
 
       val body = response.body.string()
       assertThat(body).contains("SSL_ECH_STATUS: success")
     }
+  }
+
+  private fun record(
+    call: Call,
+    platform: TlsPlatform,
+    case: String,
+    server: String,
+  ) {
+    val routes = call.routeList.routes
+    EchResultReport.record(
+      suite = "EchTest",
+      case = "$case $platform",
+      server = server,
+      platform = platform.name,
+      attempts =
+        routes.mapIndexed { index, route ->
+          val source =
+            when {
+              index == 0 -> "dns"
+              route.echConfigList != null -> "retry"
+              else -> "fallback"
+            }
+          EchResultReport.Attempt(source, route.echConfigList)
+        },
+    )
   }
 }
 

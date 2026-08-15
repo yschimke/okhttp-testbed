@@ -160,8 +160,11 @@ run_suite() {
   local class="$1"
   shift
   local status=0
+  local report="$repository_root/android-ech/build/test-results/ech-$class.json"
 
   rm -rf "$results_dir"
+  mkdir -p "$(dirname "$report")"
+  adb shell run-as okhttp.testbed.android.ech.test rm -f files/ech-results.json >/dev/null 2>&1 || true
   # `|| status=$?` rather than a bare call: this runs under `set -e`, and a failing suite whose
   # results were never moved aside is a failing suite nobody can read.
   "$repository_root/gradlew" -p "$repository_root" :android-ech:connectedDebugAndroidTest \
@@ -189,6 +192,9 @@ run_suite() {
   if [ -d "$results_dir" ]; then
     rm -rf "$results_dir-$class"
     mv "$results_dir" "$results_dir-$class"
+  fi
+  if ! adb exec-out run-as okhttp.testbed.android.ech.test cat files/ech-results.json >"$report"; then
+    rm -f "$report"
   fi
   return $status
 }

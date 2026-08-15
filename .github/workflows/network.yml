@@ -207,5 +207,6 @@ jobs:
             network/build/test-results/doh-matrix-*.json
             network/build/test-results/altsvc-*.json
             network/build/test-results/tlspolicy-*.json
+            network/build/test-results/ech-*.json
             network/build/test-results/run-metadata.json
           retention-days: 30

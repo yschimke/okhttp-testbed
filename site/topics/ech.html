@@ -44,10 +44,11 @@
     between <em>OkHttp as shipped</em> and <em>OkHttp + the missing call</em> is one call to
     <code>Conscrypt.setEchConfigList</code>, and nothing else.
   </p>
-  <div id="ech-matrix">Loading results…</div>
+  <div id="ech-public-results">Loading public-server results…</div>
   <p class="note">
-    A <span class="pill finding">no</span> here is a finding, not a broken build. Every case calls
-    a server someone else operates, so these suites record their results rather than gating — see
+    A <span class="pill failed">failed</span> result here is a finding, not a broken build. Every
+    case calls a server someone else operates, so these suites record their results rather than
+    gating — see
     <a href="../">the status page</a> for the run they came from, and
     <a href="test-servers.html">test servers</a> for who runs what.
   </p>
@@ -102,6 +103,12 @@
       </tbody>
     </table>
   </div>
+  <h3>Results against the fixture test servers</h3>
+  <p>
+    Every Android platform in the workflow is shown. Older releases deliberately exercise the
+    no-ECH path; API 37 exercises acceptance, retry config, and fallback.
+  </p>
+  <div id="ech-fixture-results">Loading fixture results…</div>
   <p>
     ECH is applied on Android only — JVM platforms accept the config list and ignore it — so these
     are instrumentation tests on an API 37 emulator, where
@@ -144,6 +151,15 @@
     asserted — today's JVM offers nothing, and pinning that would turn the feature arriving into a
     failed test.
   </p>
+
+  <h2>All ECH test cases</h2>
+  <p>
+    This is the complete result set, including fixture and public-server connections, GREASE
+    compatibility, DNS hand-off through Conscrypt, and the local ClientHello byte and extension
+    checks. Each column is one concrete OkHttp version, TLS mechanism, and JDK or Android API
+    level.
+  </p>
+  <div id="ech-all-results">Loading ECH test cases…</div>
 
   <h2>What it would take on the JVM</h2>
   <p>
