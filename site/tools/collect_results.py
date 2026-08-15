@@ -35,7 +35,7 @@ an Android suite both testing 5.5.0-SNAPSHOT belong on one card, because compari
 is what this repository is for.
 
 The Gradle task a suite ran under decides whether its result gates. `test` failing means
-this repository is red; `loomTest`, `hostileTest`, `echTest` and `networkTest` failing are
+this repository is red; `loomTest`, `hostileTest`, `postQuantumTest`, `echTest` and `networkTest` failing are
 recorded findings — about OkHttp, about the platform, or about a server someone else operates —
 which is why the build stays green. See "Suites that report rather than gate" in the README.
 
@@ -66,6 +66,7 @@ import xml.etree.ElementTree as ElementTree
 REPORTING_TASKS = {
     "loomTest",
     "hostileTest",
+    "postQuantumTest",
     "echTest",
     "echConscryptTest",
     "echPlatformTest",
@@ -94,6 +95,7 @@ CRITICAL_SUITES = {
     "EchConscryptTest",
     "EchClientHelloTest",
     "PublicEncryptedClientHelloTest",
+    "PostQuantumTest",
 }
 
 
@@ -112,6 +114,13 @@ def severity_of(suite_name: str) -> str:
 # arrive as an unexpected failure and be looked at, not inherit an excuse written for its
 # neighbours.
 EXPECTED_FAILURES = {
+    "PostQuantumTest": {
+        "connectsToPostQuantumOnlyServer": (
+            "The JDKs currently in the testbed matrix do not offer X25519MLKEM768, and the "
+            "published OkHttp API cannot select that named group yet. The PQC-only TLS 1.3 "
+            "listener therefore rejects the handshake; a green result means the capability landed."
+        ),
+    },
     "EchTest": {
         f"{case}{platform_suffix}": (
             "OkHttp's ConscryptPlatform takes the ECH config list and drops it, and no released "

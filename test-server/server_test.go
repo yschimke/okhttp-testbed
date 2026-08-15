@@ -377,6 +377,46 @@ func TestPerVersionListenersPinTheirVersion(t *testing.T) {
 	}
 }
 
+// The PQC listener must not accidentally retain Go's classical-group fallbacks. Otherwise an
+// ordinary client could make PostQuantumTest green without negotiating the group it claims to test.
+func TestPostQuantumListenerRequiresX25519MLKEM768(t *testing.T) {
+	s, plain := newTestServer(t)
+	if !s.certs.selfMade {
+		t.Skip("TLS_CERT_FILE is set; there is no fixture CA to trust")
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caPEMOf(t, plain)) {
+		t.Fatal("the fixture CA did not parse")
+	}
+
+	server := httptest.NewUnstartedServer(s.handler())
+	server.TLS = s.tlsServer("", tlsVersions{min: tls.VersionTLS13, max: tls.VersionTLS13}, false).TLSConfig
+	server.TLS.CurvePreferences = []tls.CurveID{tls.X25519MLKEM768}
+	server.StartTLS()
+	defer server.Close()
+
+	get := func(group tls.CurveID) (*http.Response, error) {
+		client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{
+			RootCAs:          pool,
+			MinVersion:       tls.VersionTLS13,
+			MaxVersion:       tls.VersionTLS13,
+			CurvePreferences: []tls.CurveID{group},
+		}}}
+		return client.Get(server.URL + "/health")
+	}
+
+	response, err := get(tls.X25519MLKEM768)
+	if err != nil {
+		t.Fatalf("a client offering X25519MLKEM768 was refused: %v", err)
+	}
+	_ = response.Body.Close()
+
+	if response, err := get(tls.X25519); err == nil {
+		_ = response.Body.Close()
+		t.Fatal("the PQC listener accepted classical X25519")
+	}
+}
+
 // The local half of the badssl matrix. Every one of these must be refused by a client that
 // trusts the fixture CA — and refused for its own reason, not because the fixture is broken.
 //

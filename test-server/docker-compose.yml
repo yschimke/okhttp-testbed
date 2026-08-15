@@ -21,6 +21,7 @@ services:
       - "${TLS11_PORT:-8411}:8411"
       - "${TLS12_PORT:-8412}:8412"
       - "${TLS13_PORT:-8413}:8413"
+      - "${PQC_PORT:-8414}:8414"
       # A port per chain that must be rejected — the local half of the badssl matrix.
       - "${BADCHAIN_EXPIRED_PORT:-8420}:8420"
       - "${BADCHAIN_WRONG_HOST_PORT:-8421}:8421"

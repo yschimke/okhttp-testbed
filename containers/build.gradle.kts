@@ -90,6 +90,11 @@ val loomTestPattern = "**/BasicLoomTest.class"
 // malformed response fails at all, stays fatal.
 val hostileTestPattern = "**/HostileRetryTest.class"
 
+// PostQuantumTest asserts the capability we want rather than today's expected failure. JDK 25 and
+// earlier do not offer X25519MLKEM768, so keep the finding visible in JUnit without making the
+// containers build red; it should turn green unchanged when the client/provider supports it.
+val postQuantumTestPattern = "**/PostQuantumTest.class"
+
 // MockServer is the one thing on this classpath that isn't Java 8 bytecode: the client's own
 // classes are compiled for 17, so on an older test JDK every suite that touches it dies during
 // class resolution — and it takes the whole task with it, because JUnit resolves the classes it
@@ -121,7 +126,7 @@ tasks.test {
   systemProperty("testbed.tlspolicy.report", tlsPolicy.get().asFile.absolutePath)
   outputs.file(tlsPolicy)
 
-  exclude(loomTestPattern, hostileTestPattern)
+  exclude(loomTestPattern, hostileTestPattern, postQuantumTestPattern)
   if (!mockServerRuns) {
     exclude(mockServerTestPattern)
     doFirst {
@@ -161,8 +166,21 @@ val hostileTest =
     ignoreFailures = true
   }
 
+val postQuantumTest =
+  tasks.register<Test>("postQuantumTest") {
+    group = "verification"
+    description = "Reports whether OkHttp can connect using X25519MLKEM768. Records failures without failing the build."
+
+    val testSourceSet = sourceSets.test.get()
+    testClassesDirs = testSourceSet.output.classesDirs
+    classpath = testSourceSet.runtimeClasspath
+    include(postQuantumTestPattern)
+
+    ignoreFailures = true
+  }
+
 tasks.check {
-  dependsOn(loomTest, hostileTest)
+  dependsOn(loomTest, hostileTest, postQuantumTest)
 }
 
 dependencies {

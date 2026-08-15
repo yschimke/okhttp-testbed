@@ -60,6 +60,9 @@ object TestServer {
   const val TLS12_PORT = 8412
   const val TLS13_PORT = 8413
 
+  /** TLS 1.3 restricted to the X25519MLKEM768 post-quantum hybrid named group. */
+  const val PQC_PORT = 8414
+
   /**
    * Mutual TLS: a client certificate is required here and merely welcome everywhere else.
    *
@@ -96,6 +99,7 @@ object TestServer {
       TLS11_PORT,
       TLS12_PORT,
       TLS13_PORT,
+      PQC_PORT,
       MTLS_PORT,
       EXPIRED_PORT,
       WRONG_HOST_PORT,
