@@ -15,7 +15,7 @@ mockserver = "7.5.0"
 # Note the tag has no `v`: releases up to 2.21 were published both ways, later ones only
 # without, so `v2.25.0` does not exist even though `v2.16.1` does.
 gohttpbin = "2.25.0"
-okhttp = "5.4.0"
+okhttp = "5.5.0"
 # The ECH suite needs DnsOverHttps.Builder.includeServiceMetadata, which no release has
 # yet: 5.4.0 resolves A and AAAA records only, so there is no HTTPS record to carry an
 # ECH config list. Drop this back to `okhttp` once a release ships it.
