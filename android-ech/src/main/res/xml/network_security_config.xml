@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Certificate Transparency was added in API 36. Older devices need a config they can parse. -->
+<network-security-config />
