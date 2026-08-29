@@ -54,10 +54,14 @@ object EchFixtureService {
       ImageFromDockerfile("okhttp/testbed-ech-fixture:local", false)
         .withFileFromClasspath("Dockerfile", "ech-fixture/Dockerfile")
         .withFileFromClasspath("main.go", "ech-fixture/main.go")
+        .withFileFromClasspath("ct-fixture-ca.pem", "ech-fixture/ct-fixture-ca.pem")
+        .withFileFromClasspath("ct-fixture-ca-key.pem", "ech-fixture/ct-fixture-ca-key.pem")
 
-    // The origin generates the CA, the leaf certificates and the ECH keys, then reports them
-    // on a plain HTTP control port. The resolver is configured from that, so both containers
-    // agree on the config lists without anything being pinned in this repository.
+    // The origin generates the leaf certificates and ECH keys from the fixture CA, then reports
+    // them on a plain HTTP control port. The CA is pinned only so Android can package it as an
+    // application trust anchor and apply Network Security Config's CT policy through its platform
+    // trust manager. The resolver is configured from the origin's output, so both containers agree
+    // on the config lists.
     val target = GenericContainer<Nothing>(image)
     target.withCommand("target")
     target.withExposedPorts(CONTROL_PORT, TARGET_PORT)

@@ -7,10 +7,16 @@
   -->
   <domain-config>
     <domain includeSubdomains="false">ct-enforced.test</domain>
+    <trust-anchors>
+      <certificates src="@raw/ct_fixture_ca" />
+    </trust-anchors>
     <certificateTransparency enabled="true" />
   </domain-config>
   <domain-config>
     <domain includeSubdomains="false">ct-opt-out.test</domain>
+    <trust-anchors>
+      <certificates src="@raw/ct_fixture_ca" />
+    </trust-anchors>
     <certificateTransparency enabled="false" />
   </domain-config>
 </network-security-config>

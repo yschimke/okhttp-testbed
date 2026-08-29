@@ -176,16 +176,17 @@ wait_for_public_network() {
 # to the same place. `results_dir` is moved aside after each run so the workflow can upload them
 # together; without that the second run would overwrite the first.
 results_dir="$repository_root/android-ech/build/outputs/androidTest-results/connected"
+additional_results_dir="$repository_root/android-ech/build/outputs/connected_android_test_additional_output"
 
 run_suite() {
   local class="$1"
   shift
   local status=0
   local report="$repository_root/android-ech/build/test-results/ech-$class.json"
+  local tls_policy_report="$repository_root/android-ech/build/test-results/tlspolicy-$class.json"
 
-  rm -rf "$results_dir"
+  rm -rf "$results_dir" "$additional_results_dir"
   mkdir -p "$(dirname "$report")"
-  adb shell run-as okhttp.testbed.android.ech.test rm -f files/ech-results.json >/dev/null 2>&1 || true
   # `|| status=$?` rather than a bare call: this runs under `set -e`, and a failing suite whose
   # results were never moved aside is a failing suite nobody can read.
   "$repository_root/gradlew" -p "$repository_root" :android-ech:connectedDebugAndroidTest \
@@ -214,8 +215,19 @@ run_suite() {
     rm -rf "$results_dir-$class"
     mv "$results_dir" "$results_dir-$class"
   fi
-  if ! adb exec-out run-as okhttp.testbed.android.ech.test cat files/ech-results.json >"$report"; then
+  local ech_source
+  ech_source="$(find "$additional_results_dir" -type f -name ech-results.json -print -quit 2>/dev/null || true)"
+  if [[ -n "$ech_source" ]]; then
+    cp "$ech_source" "$report"
+  else
     rm -f "$report"
+  fi
+  local tls_policy_source
+  tls_policy_source="$(find "$additional_results_dir" -type f -name tls-policy.json -print -quit 2>/dev/null || true)"
+  if [[ -n "$tls_policy_source" ]]; then
+    cp "$tls_policy_source" "$tls_policy_report"
+  else
+    rm -f "$tls_policy_report"
   fi
   return $status
 }
@@ -240,8 +252,7 @@ fi
 # `no-sct.badssl.com` has repeatedly expired, and accepting its generic certificate failure as a
 # CT result creates a false positive. This suite gates because both the server and its CA are ours.
 run_suite CertificateTransparencyTest \
-  -Pandroid.testInstrumentationRunnerArguments.ct=true \
-  -Pandroid.testInstrumentationRunnerArguments.caCertificate="$ca_certificate"
+  -Pandroid.testInstrumentationRunnerArguments.ct=true
 
 # The fixture suite does gate: it runs against containers this repository starts, so a failure
 # is about OkHttp or about this repository, and there is nobody else to blame for it.

@@ -396,7 +396,7 @@ def parse_tls_policy(directory: pathlib.Path) -> dict | None:
     Per platform rather than per version, which is the axis these answers vary on — but stored
     per artifact like the rest, since the platform is in the artifact's metadata.
     """
-    for report in sorted(directory.glob("tlspolicy-*.json")):
+    for report in sorted(directory.rglob("tlspolicy-*.json")):
         try:
             return json.loads(report.read_text())
         except json.JSONDecodeError as e:
