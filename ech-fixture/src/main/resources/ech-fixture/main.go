@@ -29,6 +29,8 @@ const (
 	retryPublicName    = "retry.public.test"
 	disabledName       = "disabled.secret.test"
 	disabledPublicName = "disabled.public.test"
+	ctEnforcedName     = "ct-enforced.test"
+	ctOptOutName       = "ct-opt-out.test"
 	dohName            = "doh.test"
 )
 
@@ -64,6 +66,8 @@ func runTarget() {
 		retryPublicName,
 		disabledName,
 		disabledPublicName,
+		ctEnforcedName,
+		ctOptOutName,
 	)
 	dohCertPEM, dohKeyPEM := newLeaf(caCert, caKey, dohName)
 	targetCertificate, err := tls.X509KeyPair(targetCertPEM, targetKeyPEM)

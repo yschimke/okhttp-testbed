@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+  <!-- Android 17 defaults CT on. Leaving it unset for this name is the behavior under test. -->
+  <domain-config>
+    <domain includeSubdomains="false">ct-enforced.test</domain>
+  </domain-config>
+
+  <!-- The same certificate must connect when the application uses Android 17's opt-out. -->
+  <domain-config>
+    <domain includeSubdomains="false">ct-opt-out.test</domain>
+    <certificateTransparency enabled="false" />
+  </domain-config>
+</network-security-config>

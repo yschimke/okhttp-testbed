@@ -236,6 +236,13 @@ if [ "$public_status" -ne 0 ]; then
   echo "PublicEncryptedClientHelloTest failed; recorded, not fatal." >&2
 fi
 
+# Certificate Transparency is exercised against the local TLS fixture, not a public test site:
+# `no-sct.badssl.com` has repeatedly expired, and accepting its generic certificate failure as a
+# CT result creates a false positive. This suite gates because both the server and its CA are ours.
+run_suite CertificateTransparencyTest \
+  -Pandroid.testInstrumentationRunnerArguments.ct=true \
+  -Pandroid.testInstrumentationRunnerArguments.caCertificate="$ca_certificate"
+
 # The fixture suite does gate: it runs against containers this repository starts, so a failure
 # is about OkHttp or about this repository, and there is nobody else to blame for it.
 run_suite EncryptedClientHelloTest \

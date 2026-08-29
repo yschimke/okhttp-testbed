@@ -58,8 +58,9 @@ jobs:
       #       OkHttp cannot use must produce an ordinary handshake to the real name, not a
       #       failed call.
       #   35  the same, on a recent release used by devices in the field.
-      #   37.1  the current stable image, where `android.net.ssl.EchConfigList` exists and ECH
-      #         is actually performed.
+      #   36  the same ECH fallback, plus Android 16's explicit Certificate Transparency opt-in.
+      #   37.1  the current stable image, where Certificate Transparency is enforced by default,
+      #         `android.net.ssl.EchConfigList` exists, and ECH is actually performed.
       #   37.2-beta3  the next quarterly release, exercising the same ECH path before release.
       #
       # Play Store images exist only for the newest level, so the older rows take the plain
@@ -67,7 +68,7 @@ jobs:
       matrix: >-
         ${{ fromJSON(
           (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-          && '{"include":[{"apiLevel":"21","target":"default","arch":"x86_64"},{"apiLevel":"30","target":"google_apis","arch":"x86_64"},{"apiLevel":"35","target":"google_apis","arch":"x86_64"},{"apiLevel":"37.1","target":"google_apis_playstore_ps16k","arch":"x86_64"},{"apiLevel":"37.2-beta3","target":"google_apis_playstore_ps16k","arch":"x86_64"}]}'
+          && '{"include":[{"apiLevel":"21","target":"default","arch":"x86_64"},{"apiLevel":"30","target":"google_apis","arch":"x86_64"},{"apiLevel":"35","target":"google_apis","arch":"x86_64"},{"apiLevel":"36","target":"google_apis","arch":"x86_64"},{"apiLevel":"37.1","target":"google_apis_playstore_ps16k","arch":"x86_64"},{"apiLevel":"37.2-beta3","target":"google_apis_playstore_ps16k","arch":"x86_64"}]}'
           || '{"include":[{"apiLevel":"37.1","target":"google_apis_playstore_ps16k","arch":"x86_64"}]}'
         ) }}
 
@@ -92,8 +93,9 @@ jobs:
 
       # ECH is applied by OkHttp's Android platform through android.net.ssl.EchConfigList, so
       # only the API 37 rows perform it; the rest assert what a device that cannot do ECH must
-      # do instead. See the matrix above, and EncryptedClientHelloTest.
-      - name: Run the ECH suite against the fixture containers
+      # do instead. API 36+ also runs the deterministic Certificate Transparency fixture cases.
+      # See the matrix above, EncryptedClientHelloTest, and CertificateTransparencyTest.
+      - name: Run the Android TLS suite against the fixture containers
         uses: reactivecircus/android-emulator-runner@v2.38.0
         with:
           api-level: ${{ matrix.apiLevel }}

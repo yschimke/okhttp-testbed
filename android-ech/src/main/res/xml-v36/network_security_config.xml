@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+  <!--
+    Android 16 has CT but defaults it off. These two names use the same private fixture CA and the
+    same leaf certificate. Explicitly enabling CT also forces it for a custom trust anchor; the
+    opt-out is the control that proves the certificate and connection are otherwise valid.
+  -->
+  <domain-config>
+    <domain includeSubdomains="false">ct-enforced.test</domain>
+    <certificateTransparency enabled="true" />
+  </domain-config>
+  <domain-config>
+    <domain includeSubdomains="false">ct-opt-out.test</domain>
+    <certificateTransparency enabled="false" />
+  </domain-config>
+</network-security-config>
