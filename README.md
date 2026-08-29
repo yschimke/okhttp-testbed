@@ -480,7 +480,7 @@ which is why it is its own suite with its own workflow rather than another entry
 
 Two containers stand behind it, built from one small Go program in `ech-fixture`:
 
-- an origin that holds the ECH keys, generates the CA and leaf certificates, and answers
+- an origin that holds the ECH keys, generates leaf certificates from a fixture-only CA, and answers
   every request with the two facts the test is about — whether the handshake it accepted
   used ECH, and which name it was for;
 - a DoH resolver, configured from the origin's keys, answering HTTPS records that carry an
@@ -509,20 +509,23 @@ It needs a running emulator or a connected device, and what it can assert depend
 | 21–28     | The library loads and initializes. Every case skips: the fixture origin is TLS 1.3 only, and Android gained TLS 1.3 in API 29 |
 | 29–35     | The ECH fallback. A config list OkHttp cannot apply must produce an ordinary handshake to the real name rather than a failed call |
 | 36        | The ECH fallback, plus explicitly enabled Certificate Transparency enforcement |
-| 37+       | Default Certificate Transparency enforcement and ECH itself — `android.net.ssl.EchConfigList`, which is how OkHttp's Android platform applies a config list, arrived there |
+| 37+       | Certificate Transparency enforcement with Android's current implementation and log list, plus ECH itself — `android.net.ssl.EchConfigList`, which is how OkHttp's Android platform applies a config list, arrived there |
 
 The cases also skip on a run that didn't come through the script, which is what supplies the
 fixture's ports and CA.
 
 `CertificateTransparencyTest` uses two names on the same fixture connection, covered by the
 same unlogged leaf certificate. `network_security_config.xml` opts one name out of CT, and that
-request must succeed. API 36 explicitly enforces CT for the other name; API 37 leaves CT unset to
-exercise the platform's target-SDK default. The enforced request must fail with Conscrypt's
-CT-policy error. The successful control rules out expiry, hostname, trust-chain, protocol, and
-routing failures. Keeping the negative certificate in the fixture also avoids the false positives
-caused by public `no-sct` test certificates expiring independently of this repository. The API
-37.1 emulator runs on every push and pull request, so the Android 17 default is always covered; the
-scheduled matrix also exercises the next API 37 quarterly image.
+request must succeed. CT is explicitly enforced for the other name because Android exempts custom
+trust anchors from its default policy; that request must fail with Conscrypt's CT-policy error. The
+fixture CA is packaged as an application trust anchor so both requests run through Android's
+policy-enforcing platform trust manager rather than bypassing it with a programmatic trust manager.
+The successful control rules out expiry, hostname, trust-chain, protocol, and routing failures.
+Keeping the negative certificate in the fixture also avoids the false positives caused by public
+`no-sct` test certificates expiring independently of this repository. The API 37.1 emulator runs
+on every push and pull request, so the current Android implementation and log list are always
+covered; the scheduled matrix also exercises the next API 37 quarterly image. Its observation is
+published in the status page's **Revocation, pinning and CT** table alongside the JVM results.
 
 This suite tests **5.5.0-SNAPSHOT** by default, not the release the other suites pin, and
 `libs.versions.toml` carries that as a separate `ech-okhttp` version. It has to: the suite
@@ -630,7 +633,7 @@ commit here and isn't worth asking more than once a day:
 | Axis        | Daily coverage | Why those                                                    |
 |-------------|----------------|--------------------------------------------------------------|
 | JDK         | 8, 11, 17, 21, 25 | 8 is the floor, because it is OkHttp's: JUnit 5, Testcontainers, assertk and OkHttp are all Java 8 bytecode, and the toolchain split above is what stops Gradle's own need for 17 setting the floor instead. 25 is the current LTS and the ceiling. 11 and 17 are the LTS releases applications are still on. 21 earns its place twice over — it is the LTS most builds are on, and the one the Loom finding is about: `BasicLoomTest` is `@EnabledForJreRange(min = JAVA_21)`, and JEP 491 changes its answer on 24+, so the 21 and 25 rows are the before and after of that. Java 26 is out and would work — Kotlin 2.4 targets it — but the LTS ceiling is the one users are on. 8 and 11 test the pinned release only: what they are asked is whether the artifact people can depend on today still works where they are |
-| Android API | 21, 30, 35, 36, 37.1, 37.2-beta3 | 21 is the module's `minSdk` and OkHttp 5's. 30 is an older level with TLS 1.3, 35 represents recent devices in the field, 36 exercises the CT opt-in, and both 37 images exercise default CT enforcement and ECH. The beta row catches quarterly-release regressions before they become stable. What each level actually establishes is in the table under [The Android TLS suite](#the-android-tls-suite) |
+| Android API | 21, 30, 35, 36, 37.1, 37.2-beta3 | 21 is the module's `minSdk` and OkHttp 5's. 30 is an older level with TLS 1.3, 35 represents recent devices in the field, 36 exercises the CT opt-in, and both 37 images exercise CT enforcement and ECH. The beta row catches quarterly-release regressions before they become stable. What each level actually establishes is in the table under [The Android TLS suite](#the-android-tls-suite) |
 
 Four scheduled workflows, spread across the day rather than started together — `containers`
 at 02:17 UTC, `test-server` at 06:41, `network` at 10:43, `android-ech` at 14:47. Each is

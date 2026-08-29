@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	_ "embed"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/pem"
@@ -21,6 +22,19 @@ import (
 	"strings"
 	"time"
 )
+
+// This long-lived test CA is also packaged in the Android application. CT has to run through
+// Android's platform trust manager for Network Security Config policy to apply, and that manager
+// can only load application trust anchors from resources known at build time.
+//
+//go:embed ct-fixture-ca.pem
+var fixtureCAPEM []byte
+
+// This private key is deliberately public test material and must never be used outside the local
+// fixture.
+//
+//go:embed ct-fixture-ca-key.pem
+var fixtureCAKeyPEM []byte
 
 const (
 	greenName          = "green.secret.test"
@@ -383,23 +397,19 @@ func appendUint16Length(dst, value []byte) []byte {
 }
 
 func newCA() (*x509.Certificate, *ecdsa.PrivateKey, []byte) {
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	must(err)
-	now := time.Now()
-	template := &x509.Certificate{
-		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "OkHttp ECH Test CA"},
-		NotBefore:             now.Add(-time.Hour),
-		NotAfter:              now.Add(24 * time.Hour),
-		IsCA:                  true,
-		BasicConstraintsValid: true,
-		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+	certificateBlock, _ := pem.Decode(fixtureCAPEM)
+	if certificateBlock == nil {
+		log.Fatal("invalid fixture CA certificate")
 	}
-	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	certificate, err := x509.ParseCertificate(certificateBlock.Bytes)
 	must(err)
-	certificate, err := x509.ParseCertificate(der)
+	keyBlock, _ := pem.Decode(fixtureCAKeyPEM)
+	if keyBlock == nil {
+		log.Fatal("invalid fixture CA private key")
+	}
+	parsedKey, err := x509.ParseECPrivateKey(keyBlock.Bytes)
 	must(err)
-	return certificate, key, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	return certificate, parsedKey, fixtureCAPEM
 }
 
 func newLeaf(ca *x509.Certificate, caKey *ecdsa.PrivateKey, names ...string) ([]byte, []byte) {
