@@ -28,18 +28,34 @@
 
 <main class="wrap">
 
-  <h1>Testbed status</h1>
+  <p class="eyebrow">Live compatibility signal</p>
+  <h1>OkHttp, tested against the real network.</h1>
+  <p class="lede status-lede">
+    Published releases and the next snapshot, exercised across real JDKs, Android, containers,
+    public resolvers and public servers. The latest evidence decides what appears here.
+  </p>
 
   <div class="run-summary" id="run-summary">Loading the most recent run…</div>
 
+  <section class="status-story" id="overview" aria-live="polite">
+    <div class="story-lead">
+      <span class="story-kicker">Latest verdict</span>
+      <h2 id="status-headline" data-nav-label="Overview">Reading the latest results…</h2>
+      <p id="status-explanation"></p>
+    </div>
+    <div class="signal-grid" id="signal-grid"></div>
+  </section>
+
   <div class="cards" id="version-cards"></div>
 
-  <section id="failures">
-    <h2>Failures and findings</h2>
+  <section id="attention">
+    <h2>Needs attention</h2>
     <div id="failure-list"></div>
   </section>
 
   <h2 id="suites">Suites</h2>
+  <p class="section-intro">Compare the same suite across published and snapshot versions. Start with the rows that need attention, or show the complete matrix.</p>
+  <div id="suite-controls"></div>
   <div class="table-scroll">
     <table id="suite-table"></table>
   </div>
@@ -49,27 +65,30 @@
     <table id="endpoint-table"></table>
   </div>
 
-  <h2 id="clienthello">Handshake offered</h2>
+  <h2 id="observations">Protocol observations</h2>
+  <p class="section-intro">Measurements are shown without turning platform or server policy into a pass/fail judgement.</p>
+
+  <h3 id="clienthello">Handshake offered</h3>
   <div class="table-scroll">
     <table id="clienthello-table"></table>
   </div>
 
-  <h2 id="doh-matrix">Resolvers, side by side</h2>
+  <h3 id="doh-matrix">Resolvers, side by side</h3>
   <div class="table-scroll">
     <table id="doh-matrix-table"></table>
   </div>
 
-  <h2 id="alt-svc">HTTP/3 offered, and taken</h2>
+  <h3 id="alt-svc">HTTP/3 offered, and taken</h3>
   <div class="table-scroll">
     <table id="alt-svc-table"></table>
   </div>
 
-  <h2 id="tls-policy">Revocation, pinning and CT</h2>
+  <h3 id="tls-policy">Revocation, pinning and CT</h3>
   <div class="table-scroll">
     <table id="tls-policy-table"></table>
   </div>
 
-  <h2>History</h2>
+  <h2 id="history-heading">History</h2>
   <div id="history"></div>
 
   <h2 id="open-work">Open work</h2>
@@ -187,6 +206,7 @@
 </footer>
 
 <script src="assets/finding-groups.js"></script>
+<script src="assets/navigation.js"></script>
 <script src="assets/status.js"></script>
 </body>
 </html>
