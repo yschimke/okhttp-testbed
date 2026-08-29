@@ -32,6 +32,14 @@ const pill = (status) =>
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
+function suiteStatus(suite) {
+  if (!suite) return "unknown";
+  if (suite.failed) return suite.reporting && suite.severity !== "critical" ? "finding" : "failed";
+  if (suite.expected) return "expected";
+  if (suite.passed) return "passed";
+  return "skipped";
+}
+
 /*
  * Where a suite's source lives, from the workflow that ran it and its fully qualified name.
  *
@@ -93,8 +101,76 @@ function renderSummary(snapshot) {
   document.getElementById("run-summary").replaceChildren(pill(snapshot.status), ...runs);
 }
 
+function renderStatusStory(snapshot) {
+  const counts = { passed: 0, failed: 0, finding: 0, expected: 0, skipped: 0 };
+  for (const version of snapshot.versions) {
+    for (const suite of version.suites) {
+      for (const testCase of suite.cases) {
+        const kind = testCase.status === "failed"
+          ? suite.reporting && suite.severity !== "critical" ? "finding" : "failed"
+          : testCase.status;
+        counts[kind] = (counts[kind] || 0) + 1;
+      }
+    }
+  }
+
+  const headline = counts.failed
+    ? `${plural(counts.failed, "critical failure")} ${counts.failed === 1 ? "needs" : "need"} attention.`
+    : counts.finding
+      ? `No critical failures. ${plural(counts.finding, "watch finding")} ${counts.finding === 1 ? "is" : "are"} worth a look.`
+      : "Everything expected to run passed.";
+  const explanation = counts.expected
+    ? `${plural(counts.expected, "known limitation")} behaved as predicted; these stay separate from regressions.`
+    : "No predicted failures were recorded in this run.";
+  document.getElementById("status-headline").textContent = headline;
+  document.getElementById("status-explanation").textContent = explanation;
+
+  const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
+  const ran = total - counts.skipped;
+  const endpoints = snapshot.endpoints || [];
+  const down = endpoints.filter((endpoint) => endpoint.state !== "up");
+  const released = snapshot.versions.find((version) => !version.okhttpVersion.includes("SNAPSHOT"));
+  const snapshotVersion = snapshot.versions.find((version) => version.okhttpVersion.includes("SNAPSHOT"));
+
+  let comparisonValue = "One version";
+  let comparisonDetail = "No release-to-snapshot comparison is available.";
+  if (released && snapshotVersion) {
+    const releaseSuites = new Map(released.suites.map((suite) => [suite.name, suiteStatus(suite)]));
+    const shared = snapshotVersion.suites.filter((suite) => releaseSuites.has(suite.name));
+    const changed = shared.filter((suite) => releaseSuites.get(suite.name) !== suiteStatus(suite));
+    comparisonValue = changed.length ? plural(changed.length, "difference") : "Aligned";
+    comparisonDetail = changed.length
+      ? `Across ${plural(shared.length, "shared suite")}; open the matrix to see them.`
+      : `${plural(shared.length, "shared suite")} have the same outcome in release and snapshot.`;
+  }
+
+  const signal = (href, label, value, detail, tone = "") =>
+    el("a", { className: `signal-card ${tone}`, href }, [
+      el("span", { className: "signal-label", textContent: label }),
+      el("strong", { textContent: value }),
+      el("span", { className: "signal-detail", textContent: detail }),
+    ]);
+
+  document.getElementById("signal-grid").replaceChildren(
+    signal("#suites", "Coverage", `${ran}/${total}`, `${plural(counts.skipped, "check")} not run`),
+    signal("#suites", "Release ↔ snapshot", comparisonValue, comparisonDetail),
+    signal(
+      "#endpoints",
+      "Public endpoints",
+      endpoints.length ? `${endpoints.length - down.length}/${endpoints.length}` : "No probes",
+      down.length ? `${down.map((endpoint) => endpoint.server).join(", ")} unreachable` : "Every probed endpoint is reachable",
+      down.length ? "signal-warning" : "",
+    ),
+  );
+}
+
 function renderVersionCards(snapshot) {
   const cards = snapshot.versions.map((version) => {
+    const barSegment = (className, value) => {
+      const segment = el("span", { className });
+      segment.style.flexGrow = value;
+      return segment;
+    };
     const counts = el("div", { className: "counts" }, [
       el("div", {}, [
         el("div", { className: "n-passed", textContent: version.passed }),
@@ -126,6 +202,12 @@ function renderVersionCards(snapshot) {
           ` · ${plural(version.suites.length, "suite")} in ${version.timeSeconds}s`,
       }),
       counts,
+      el("div", { className: "result-bar", title: `${version.passed} passed, ${version.failed} unexpected, ${version.expected ?? 0} expected, ${version.skipped} skipped` }, [
+        barSegment("bar-passed", version.passed),
+        barSegment("bar-failed", version.failed),
+        barSegment("bar-expected", version.expected ?? 0),
+        barSegment("bar-skipped", version.skipped),
+      ]),
     ]);
   });
 
@@ -148,7 +230,8 @@ function renderSuiteTable(snapshot) {
 
   const rows = suiteNames.map((name) => {
     const any = versions.flatMap((v) => v.suites).find((s) => s.name === name);
-    return el("tr", {}, [
+    const statuses = versions.map((version) => suiteStatus(version.suites.find((suite) => suite.name === name)));
+    const row = el("tr", {}, [
       el("td", { className: "suite" }, any ? suiteLink(any) : name),
       el("td", { className: "mono", textContent: any ? any.workflow : "" }),
       el("td", { className: "mono", textContent: any ? any.task : "" }),
@@ -160,10 +243,7 @@ function renderSuiteTable(snapshot) {
         const suite = version.suites.find((s) => s.name === name);
         if (!suite) return el("td", {}, el("span", { className: "pill unknown", textContent: "—" }));
         const expected = suite.expected ?? 0;
-        const status = suite.failed
-          ? suite.reporting && suite.severity !== "critical" ? "finding" : "failed"
-          : expected ? "expected"
-          : suite.passed ? "passed" : "skipped";
+        const status = suiteStatus(suite);
         return el("td", {}, [
           pill(status),
           el("span", {
@@ -176,12 +256,61 @@ function renderSuiteTable(snapshot) {
         ]);
       }),
     ]);
+    row.dataset.name = name.toLowerCase();
+    row.dataset.attention = statuses.some((status) => !["passed", "unknown"].includes(status)) ? "true" : "false";
+    row.dataset.changed = new Set(statuses.filter((status) => status !== "unknown")).size > 1 ? "true" : "false";
+    return row;
   });
 
   document.getElementById("suite-table").replaceChildren(
     el("thead", {}, head),
     el("tbody", {}, rows),
   );
+
+  renderSuiteControls(rows);
+}
+
+function renderSuiteControls(rows) {
+  const target = document.getElementById("suite-controls");
+  if (!target) return;
+  let filter = rows.some((row) => row.dataset.attention === "true") ? "attention" : "all";
+
+  const count = el("span", { className: "filter-count", ariaLive: "polite" });
+  const search = el("input", {
+    className: "suite-search",
+    type: "search",
+    placeholder: "Find a suite…",
+    ariaLabel: "Find a suite",
+  });
+  const buttons = [
+    ["attention", "Needs attention"],
+    ["changed", "Different outcomes"],
+    ["all", "All suites"],
+  ].map(([value, label]) => {
+    const button = el("button", { type: "button", textContent: label });
+    button.dataset.filter = value;
+    return button;
+  });
+
+  const update = () => {
+    const query = search.value.trim().toLowerCase();
+    let visible = 0;
+    for (const row of rows) {
+      const matchesFilter = filter === "all" || row.dataset[filter] === "true";
+      const show = matchesFilter && (!query || row.dataset.name.includes(query));
+      row.hidden = !show;
+      if (show) visible++;
+    }
+    for (const button of buttons) button.setAttribute("aria-pressed", button.dataset.filter === filter ? "true" : "false");
+    count.textContent = `Showing ${visible} of ${rows.length}`;
+  };
+  for (const button of buttons) button.addEventListener("click", () => {
+    filter = button.dataset.filter;
+    update();
+  });
+  search.addEventListener("input", update);
+  target.replaceChildren(el("div", { className: "suite-filters" }, buttons), search, count);
+  update();
 }
 
 function renderFailures(snapshot) {
@@ -297,7 +426,7 @@ function renderFailures(snapshot) {
   const body = document.getElementById("failure-list");
   if (!items.length) {
     body.replaceChildren(
-      el("p", { textContent: "Everything ran, and everything passed." }),
+      el("p", { textContent: snapshot.versions.length ? "Everything ran, and everything passed." : "No results to inspect." }),
     );
   } else {
     body.replaceChildren(...rendered);
@@ -618,7 +747,7 @@ function renderHistory(history) {
           `${version.passed} passed, ${version.failed} failed, ${version.skipped ?? 0} skipped`
         : `${when} ${okhttpVersion}: not tested`;
       const source = (entry.collectedFrom || [])[0];
-      return el("a", { className: `${status}`, href: source ? source.runUrl : "#", title });
+      return el("a", { className: `${status}`, href: source ? source.runUrl : "#", title, ariaLabel: title });
     });
 
     return el("div", { className: "history-row" }, [
@@ -631,7 +760,21 @@ function renderHistory(history) {
   if (!rows.length) {
     target.replaceChildren(el("p", { textContent: "No history recorded yet." }));
   } else {
-    target.replaceChildren(...rows);
+    const recent = entries.slice(-30);
+    const critical = recent.filter((entry) => entry.status === "failed").length;
+    const firstDate = (entries[0]?.finishedAt || "").slice(0, 10);
+    const lastDate = (entries.at(-1)?.finishedAt || "").slice(0, 10);
+    target.replaceChildren(
+      el("div", { className: "history-summary" }, [
+        el("div", {}, [el("strong", { textContent: entries.length }), el("span", { textContent: "published updates" })]),
+        el("div", {}, [el("strong", { textContent: critical }), el("span", { textContent: `critical ${critical === 1 ? "run" : "runs"} in the latest ${recent.length}` })]),
+        el("div", {}, [el("strong", { textContent: `${firstDate} → ${lastDate}` }), el("span", { textContent: "history retained" })]),
+      ]),
+      el("div", { className: "history-legend card-label" }, [
+        pill("passed"), pill("finding"), pill("failed"), el("span", { textContent: "Oldest → newest; focus or hover for counts." }),
+      ]),
+      ...rows,
+    );
   }
 }
 
@@ -722,6 +865,7 @@ async function loadJson(path) {
   try {
     const snapshot = await loadJson("data/latest.json");
     renderSummary(snapshot);
+    renderStatusStory(snapshot);
     renderVersionCards(snapshot);
     renderSuiteTable(snapshot);
     renderFailures(snapshot);
@@ -741,6 +885,9 @@ async function loadJson(path) {
         ` runs. (${e.message})`,
       ]),
     );
+    document.getElementById("status-headline").textContent = "No published results yet.";
+    document.getElementById("status-explanation").textContent = "The verdict and comparison will appear when result data is available.";
+    document.getElementById("signal-grid").replaceChildren();
     // The sections are in the page unconditionally now, so they have to say something when
     // there is nothing to say. An empty table under a heading reads as a broken page.
     renderFailures({ versions: [] });
