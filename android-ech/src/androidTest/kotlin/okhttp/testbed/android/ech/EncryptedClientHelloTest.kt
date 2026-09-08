@@ -162,7 +162,10 @@ class EncryptedClientHelloTest {
     }
 
     fun get(hostname: String): FixtureResult {
-      val call = client.newCall(Request("https://$hostname/".toHttpUrl()))
+      // Use the unprivileged port exposed by the fixture. Older Android releases ignore the
+      // HTTPS record's port when ECH is unavailable and otherwise fall back to port 443, which
+      // adb cannot reverse without root on current emulator images.
+      val call = client.newCall(Request("https://$hostname:$FIXTURE_PORT/".toHttpUrl()))
       return call.execute().use { response ->
         assertThat(response.code).isEqualTo(200)
         FixtureResult(response.body.string(), call.fixtureRoutes.routes.toList())
@@ -194,6 +197,7 @@ class EncryptedClientHelloTest {
     private const val TLS_13_API_LEVEL = 29
 
     private const val DOH_NAME = "doh.test"
+    private const val FIXTURE_PORT = 8443
     private const val GREEN_NAME = "green.secret.test"
     private const val RETRY_NAME = "retry.secret.test"
     private const val DISABLED_NAME = "disabled.secret.test"
