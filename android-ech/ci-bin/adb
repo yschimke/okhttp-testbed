@@ -5,7 +5,7 @@
 # a few seconds. Retry only those runner-owned post-boot commands; every command used by the
 # test harness remains an ordinary adb invocation and has its own readiness/error handling.
 
-real_adb="${ANDROID_HOME:?ANDROID_HOME must point to the Android SDK}/platform-tools/adb"
+real_adb="${ANDROID_HOME:?ANDROID_HOME must point to the Android SDK}/platform-tools/adb.real"
 
 case " $* " in
   *" shell input keyevent "* | *" shell settings put "*) ;;
