@@ -36,7 +36,6 @@ service_pid=$!
 
 cleanup() {
   adb reverse --remove tcp:8053 >/dev/null 2>&1 || true
-  adb reverse --remove tcp:443 >/dev/null 2>&1 || true
   adb reverse --remove tcp:8443 >/dev/null 2>&1 || true
   # Deleting the endpoint file is how the fixture is asked to stop.
   rm -f "$endpoint_file"
@@ -145,10 +144,10 @@ wait_for_device_ready() {
 
 wait_for_device_ready
 
-# 8053 is the resolver. The origin is reached on 8443, the port the HTTPS record publishes,
-# and on 443 for the default the URL would otherwise use.
+# 8053 is the resolver. The origin is reached on 8443, the port the HTTPS record publishes.
+# Do not reverse privileged device port 443: recent Android images reject that bind, and the
+# fixture's HTTPS service metadata means none of the deterministic tests connect to it.
 adb reverse tcp:8053 "tcp:$doh_host_port"
-adb reverse tcp:443 "tcp:$target_host_port"
 adb reverse tcp:8443 "tcp:$target_host_port"
 
 # Boot completion does not mean that the emulator has installed an outbound route. The public
