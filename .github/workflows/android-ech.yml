@@ -101,7 +101,10 @@ jobs:
           api-level: ${{ matrix.apiLevel }}
           target: ${{ matrix.target }}
           arch: ${{ matrix.arch }}
-          disable-animations: true
+          # API 37 can report boot completion before the settings binder is stable. The action's
+          # animation mutations then fail with "Broken pipe" before our stronger readiness gate
+          # can run. This headless suite does not interact with animated UI, so skip those calls.
+          disable-animations: false
           emulator-options: >-
             -no-window
             -gpu swiftshader_indirect
