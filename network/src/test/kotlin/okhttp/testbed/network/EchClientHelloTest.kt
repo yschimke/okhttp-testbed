@@ -50,7 +50,7 @@ class EchClientHelloTest {
   @Test
   fun theNameIsNotSentInTheClear() {
     assumeTrue(ConscryptEch.isSupported) {
-      "requires a Conscrypt with ECH. Run conscrypt/fetch-conscrypt.sh."
+      "requires Conscrypt 2.7.0 with ECH support on this platform."
     }
 
     val trustManager = EchEnablingTrustManager(ConscryptEch.platformTrustManager())

@@ -50,10 +50,9 @@ object ConscryptEch {
   /**
    * True if the Conscrypt on the classpath can encrypt a client hello.
    *
-   * `setEchConfigList` exists only on the `google3-export` branch. A released Conscrypt has the
-   * rest of this class's API and not this method, so the check is for the method rather than for
-   * the provider — anything else would report "Conscrypt is missing" for a Conscrypt that is
-   * there and merely too old.
+   * Conscrypt 2.7.0 is the first release with `setEchConfigList`. Keep checking the method as
+   * well as the provider so an unsupported native platform or an accidentally downgraded
+   * runtime dependency skips with an accurate reason.
    */
   val isSupported: Boolean by lazy {
     try {
@@ -136,9 +135,9 @@ class EchEnablingTrustManager(
       hostname: String,
     ): CertificateTransparencyVerificationReason = CertificateTransparencyVerificationReason.UNKNOWN
 
-    // ENABLED rather than REQUIRED: a hostname with no config list should still connect, in the
-    // clear, the way a browser does. REQUIRED would turn tls12.tls-ech.dev into a failure to
-    // connect rather than the negative result it is there to give.
+    // ENABLED rather than REQUIRED: a hostname with no config list is allowed and sends GREASE.
+    // A server rejection still needs a retry without ECH; OpenJDK Conscrypt currently discards
+    // the data needed for that retry, which the TLS 1.2 cases record as an expected limitation.
     override fun getDomainEncryptionMode(hostname: String): DomainEncryptionMode = DomainEncryptionMode.ENABLED
   }
 }

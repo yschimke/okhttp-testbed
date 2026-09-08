@@ -123,9 +123,8 @@ EXPECTED_FAILURES = {
     },
     "EchTest": {
         f"{case}{platform_suffix}": (
-            "OkHttp's ConscryptPlatform takes the ECH config list and drops it, and no released "
-            "Conscrypt has the method for it to call — so this cannot pass until a Conscrypt "
-            "after 2.7.0 ships and OkHttp can compile against it. EchPlatformTest runs the same "
+            "OkHttp's ConscryptPlatform takes the ECH config list and drops it. Conscrypt 2.7.0 "
+            "now exposes the method it needs; EchTest's CONSCRYPT_ECH variant runs the same "
             "request with that one call added."
         )
         for case in (

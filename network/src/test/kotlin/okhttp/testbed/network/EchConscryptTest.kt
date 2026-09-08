@@ -28,15 +28,14 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 
 /**
- * The same servers [EchTest] calls, reached through a Conscrypt built from `google3-export`
- * instead of through the JDK's TLS stack.
+ * The same servers [EchTest] calls, reached through Conscrypt 2.7.0 instead of through the JDK's
+ * TLS stack.
  *
- * [EchTest] fails its `sni=encrypted` assertions on the JVM, and that is a true result: no
- * published TLS stack a JVM can load will encrypt a client hello. This suite exists to say what
- * is missing rather than that something is. It supplies the two pieces the JVM lacks — a
- * Conscrypt with ECH in it, and a network security policy that says ECH is allowed — and leaves
- * everything else to OkHttp. When these pass and [EchTest] doesn't, the difference is the work
- * still to be done, and it is a small and specific piece of work:
+ * [EchTest] fails its `sni=encrypted` assertions on the JVM, and that is a true result: OkHttp's
+ * JVM platforms do not enable ECH. Conscrypt is now a published TLS stack the JVM can load to
+ * encrypt a client hello. This suite supplies Conscrypt and a network security policy that says
+ * ECH is allowed, and leaves everything else to OkHttp. When these pass and [EchTest] doesn't,
+ * the difference is the work still to be done, and it is a small and specific piece of work:
  *
  *  * `ConscryptPlatform.configureTlsExtensions` accepts an `echConfigList` and ignores it. It
  *    needs to call `Conscrypt.setEchConfigList`, the way `Android10Platform` does.
@@ -46,9 +45,7 @@ import org.junit.jupiter.api.Test
  *    Conscrypt change, not an OkHttp change, which is why the stale-config case from [EchTest]
  *    has no counterpart here.
  *
- * The Conscrypt this needs is not published anywhere. `conscrypt/build-conscrypt.sh` builds it
- * and the `conscrypt` workflow caches the result as a release; without it every test here skips.
- * See `conscrypt/README.md`.
+ * Conscrypt 2.7.0 is consumed from Maven Central like the other test dependencies.
  */
 @RequiresEndpoint(Endpoint.CLOUDFLARE_DOH)
 class EchConscryptTest {
@@ -59,7 +56,7 @@ class EchConscryptTest {
   @BeforeEach
   fun setUp() {
     assumeTrue(ConscryptEch.isSupported) {
-      "requires a Conscrypt with ECH. Run conscrypt/fetch-conscrypt.sh."
+      "requires Conscrypt 2.7.0 with ECH support on this platform."
     }
 
     val trustManager = EchEnablingTrustManager(ConscryptEch.platformTrustManager())
@@ -128,8 +125,9 @@ class EchConscryptTest {
   }
 
   /**
-   * TLS 1.2 cannot carry ECH, and this name publishes no config list. The point is that the
-   * connection still happens: a client that can do ECH must not break the servers that can't.
+   * TLS 1.2 cannot carry ECH, and this name publishes no config list. A complete client retries
+   * after its GREASE ECH is rejected and still connects; OpenJDK Conscrypt currently discards
+   * the retry data, so the reporting layer records that failure as an expected limitation.
    */
   @Test
   @RequiresEndpoint(Endpoint.TLS_ECH_DEV)
