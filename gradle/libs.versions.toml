@@ -2,6 +2,7 @@
 agp = "9.4.0"
 androidx-test-runner = "1.7.0"
 assertk = "0.28.1"
+conscrypt = "2.7.0"
 junit4 = "4.13.2"
 junit-platform = "1.14.4"
 kotlin = "2.4.10"
@@ -26,6 +27,7 @@ testcontainers = "2.0.5"
 [libraries]
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidx-test-runner" }
 assertk = { module = "com.willowtreeapps.assertk:assertk", version.ref = "assertk" }
+conscrypt-openjdk-uber = { module = "org.conscrypt:conscrypt-openjdk-uber", version.ref = "conscrypt" }
 junit4 = { module = "junit:junit", version.ref = "junit4" }
 junit-jupiter-api = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "org-junit-jupiter" }
 junit-jupiter-engine = { module = "org.junit.jupiter:junit-jupiter-engine", version.ref = "org-junit-jupiter" }

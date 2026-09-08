@@ -45,25 +45,13 @@ val echClientHelloTestPattern = "EchClientHelloTest"
 // exists below 5.5.0.
 val serviceMetadataPatterns = listOf("DohServiceMetadataTest", "HttpsRecordTest", "DnsRecords")
 
-// The Conscrypt built from `google3-export`, if someone has fetched or built it. It is not on
-// any repository — `Conscrypt.setEchConfigList` exists on that branch and in no release — so
-// `conscrypt/fetch-conscrypt.sh` stages it here. Absent, the suite that needs it is left out of
-// the build entirely rather than failing to compile. See conscrypt/README.md.
-val conscryptJars =
-  fileTree(rootProject.layout.projectDirectory.dir("conscrypt/build/dist")) {
-    include("conscrypt-openjdk-*.jar")
-  }
-
-val hasConscrypt = !conscryptJars.isEmpty
-
 sourceSets {
   test {
     kotlin {
-      // EchTest joined this list when it became parameterised over the platforms: it names
-      // EchConscryptPlatform, so it can no longer compile without a Conscrypt to build it on.
-      // The workflow fetches one before running, and a run that couldn't reports no ECH suites
-      // rather than a suite that silently tests half of what it says it does.
-      if (!supportsEch || !hasConscrypt) {
+      // EchTest joined this list when it became parameterised over the platforms and therefore
+      // names Conscrypt types. Conscrypt is a normal Maven dependency now; only an OkHttp version
+      // predating the ECH API leaves these sources out of the build.
+      if (!supportsEch) {
         exclude(
           "**/$echTestPattern.kt",
           "**/$echConscryptTestPattern.kt",
@@ -171,7 +159,7 @@ val echTest =
     include("**/$echTestPattern.class")
 
     reportEndpointsTo("echTest")
-    enabled = supportsEch && hasConscrypt
+    enabled = supportsEch
     ignoreFailures = true
 
     doFirst {
@@ -197,7 +185,7 @@ val echConscryptTest =
     include("**/$echConscryptTestPattern.class", "**/$echClientHelloTestPattern.class")
 
     reportEndpointsTo("echConscryptTest")
-    enabled = supportsEch && hasConscrypt
+    enabled = supportsEch
     ignoreFailures = true
 
     doFirst {
@@ -209,10 +197,6 @@ if (!supportsEch) {
   logger.lifecycle("Skipping EchTest: OkHttp $okhttpVersion predates the ECH API")
 }
 
-if (!hasConscrypt) {
-  logger.lifecycle("Skipping EchConscryptTest: no Conscrypt build. Run conscrypt/fetch-conscrypt.sh.")
-}
-
 tasks.check {
   dependsOn(networkTest, echTest, echConscryptTest)
 }
@@ -222,8 +206,7 @@ dependencies {
   testImplementation("com.squareup.okhttp3:okhttp-tls:$okhttpVersion")
   testImplementation("com.squareup.okhttp3:okhttp-dnsoverhttps:$okhttpVersion")
 
-  // Absent unless someone staged it; `hasConscrypt` leaves EchConscryptTest out when it is.
-  testImplementation(conscryptJars)
+  testImplementation(libs.conscrypt.openjdk.uber)
 
   testImplementation(libs.junit.jupiter.api)
   testImplementation(libs.junit.jupiter.params)

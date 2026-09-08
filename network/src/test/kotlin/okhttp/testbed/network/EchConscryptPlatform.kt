@@ -36,18 +36,16 @@ import org.conscrypt.Conscrypt
  * `echConfigList` argument to [configureTlsExtensions], and the only thing added is the
  * [Conscrypt.setEchConfigList] call that `ConscryptPlatform` omits.
  *
- * So [EchPlatformTest] and [EchTest] make the same requests through the same public API, and
+ * So [EchTest]'s two platform variants make the same requests through the same public API, and
  * differ only by which platform is installed. What that difference measures is one call.
  *
- * Why this exists here rather than upstream: OkHttp's `master` can't compile against a Conscrypt
- * that has these methods, because no published Conscrypt does. [lysine-dev/okhttp#9559][pr] is
- * the change on the OkHttp side, and it builds against a Conscrypt built from source. This
- * reaches the same place from the other direction, with a platform written here.
+ * Why this exists here rather than upstream: OkHttp does not yet make the ECH configuration
+ * call in its Conscrypt platform. [lysine-dev/okhttp#9559][pr] is the change on the OkHttp side;
+ * this reaches the same place from the other direction, with a platform written here.
  *
  * It is not a proposal for how OkHttp should do it. `ConscryptPlatform` is `final` and its
  * constructor is private, so this can't extend it and reimplements the parts it needs instead;
- * the upstream change is four lines in the class itself, and uses `setEchParameters`, a newer
- * Conscrypt API than the `setEchConfigList` the `google3-export` build here exposes.
+ * the upstream change is only a few lines in the class itself.
  *
  * [pr]: https://github.com/lysine-dev/okhttp/pull/9559
  */

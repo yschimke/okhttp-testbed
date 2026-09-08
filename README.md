@@ -199,7 +199,7 @@ unaffected, which is most of the module.
 ```
 ./gradlew containers:test containers:loomTest containers:hostileTest
 ./gradlew network:networkTest network:echTest
-./gradlew network:echConscryptTest   # after conscrypt/fetch-conscrypt.sh; see ECH on the JVM
+./gradlew network:echConscryptTest   # see ECH on the JVM
 ```
 
 `test` covers the gating suites and fails the build. `loomTest`, `hostileTest`, `networkTest`,
@@ -559,13 +559,11 @@ ECH on the JVM
 `network:echTest` cannot pass on the JVM, and it is worth being precise about what is
 missing, because it is less than it looks.
 
-There is no published TLS stack a JVM can load that will encrypt a client hello. Conscrypt's
-`google3-export` branch has one — `Conscrypt.setEchConfigList(SSLSocket, byte[])` is public
-API there and in no release. `conscrypt/` builds that branch and caches the result as a
-release on this repository, and `network:echConscryptTest` runs the ECH cases against it:
+Conscrypt 2.7.0 is the first published TLS stack a JVM can load that will encrypt a client
+hello. It exposes `Conscrypt.setEchConfigList(SSLSocket, byte[])`, and
+`network:echConscryptTest` runs the ECH cases against its published uber JAR:
 
 ```
-conscrypt/fetch-conscrypt.sh
 ./gradlew network:echConscryptTest -PokhttpVersion=5.5.0-SNAPSHOT
 ```
 
@@ -573,15 +571,13 @@ Two suites run under that task. `EchClientHelloTest` reads the bytes of the clie
 against a local socket that accepts a connection and says nothing — no DNS, no internet, no
 server — and asserts that the name is not in them. `EchConscryptTest` is `EchTest`'s cases
 against the public servers, with the two things the JVM lacks supplied from outside OkHttp:
-this Conscrypt, and a network security policy saying ECH is allowed. When those pass and
+Conscrypt 2.7.0, and a network security policy saying ECH is allowed. When those pass and
 `echTest` doesn't, the difference between them is one call OkHttp's `ConscryptPlatform`
 doesn't make. It is not a claim that OkHttp does ECH on the JVM — the suite makes that call
 itself, from a socket factory, precisely because OkHttp doesn't.
 
-The whole arrangement is temporary and `conscrypt/` should be deleted the day Conscrypt ships
-ECH. [`conscrypt/README.md`](conscrypt/README.md) has the detail: what is missing where, why
-the build is cached as a release rather than run per commit, and why the stale-config retry
-case has no counterpart on the JVM at all.
+The published OpenJDK API still does not expose a rejected handshake's retry config. That is
+why the stale-config retry case has no counterpart on the JVM at all.
 
 That suite is also the one place a version matters to compilation. `Route.echConfigList` and
 `DnsOverHttps.Builder.includeServiceMetadata` arrived after 5.4.0, so

@@ -50,10 +50,9 @@ import org.junit.jupiter.params.provider.EnumSource
  * is the platform, and the platforms differ by one call to `Conscrypt.setEchConfigList`.
  *
  * On [TlsPlatform.JDK] the route assertions pass and the assertions about what the server saw do
- * not, and that is the finding this suite exists to report: it cannot change until a Conscrypt
- * carrying the ECH API is released and OkHttp can compile against it. Those failures are marked
- * expected on the status page. A failure on [TlsPlatform.CONSCRYPT_ECH] is not expected, and is
- * the one worth waking up for.
+ * not, and that is the finding this suite exists to report: OkHttp does not yet hand the config
+ * list to Conscrypt. Those failures are marked expected on the status page. A failure on
+ * [TlsPlatform.CONSCRYPT_ECH] is not expected, and is the one worth waking up for.
  *
  * Ported from OkHttp's `android-test`, where it runs as a `Remote` test on API 37 and above. Two
  * of the cases there don't cross over: the `AndroidDns` variant, and the one covering a host
@@ -85,7 +84,7 @@ class EchTest {
       TlsPlatform.JDK -> EchConscryptPlatform.uninstall()
       TlsPlatform.CONSCRYPT_ECH -> {
         assumeTrue(ConscryptEch.isSupported) {
-          "requires a Conscrypt with ECH. Run conscrypt/fetch-conscrypt.sh."
+          "requires Conscrypt 2.7.0 with ECH support on this platform."
         }
         EchConscryptPlatform.install()
       }

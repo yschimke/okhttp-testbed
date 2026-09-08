@@ -19,9 +19,6 @@ on:
       - 'gradle/**'
       - 'gradlew'
       - 'gradlew.bat'
-      - 'conscrypt/fetch-conscrypt.sh'
-      - 'conscrypt/release-tag.sh'
-      - 'conscrypt/pinned.properties'
       - '.github/workflows/network.yml'
   pull_request:
     paths:
@@ -31,9 +28,6 @@ on:
       - 'gradle/**'
       - 'gradlew'
       - 'gradlew.bat'
-      - 'conscrypt/fetch-conscrypt.sh'
-      - 'conscrypt/release-tag.sh'
-      - 'conscrypt/pinned.properties'
       - '.github/workflows/network.yml'
   schedule:
     # Daily, so a change at one of the servers these tests call — or in a published
@@ -75,13 +69,6 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6.3.0
-
-      # Without this the Conscrypt suites are left out of the source set and a change that
-      # breaks them compiles clean. Failure is not fatal here: a pull request that bumps the
-      # pin has no release to fetch yet, and the conscrypt workflow is what builds that one.
-      - name: Fetch Conscrypt
-        continue-on-error: true
-        run: conscrypt/fetch-conscrypt.sh
 
       - name: Compile Network Suites
         run: ./gradlew network:compileTestKotlin network:checkPublicApiOnly
@@ -140,14 +127,6 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6.3.0
-
-      # The ECH suites' other half: a Conscrypt that can encrypt a client hello, which is not
-      # published anywhere. Downloaded rather than built — the build is its own workflow, and
-      # this one runs daily. A missing release leaves echConscryptTest out of the build and
-      # the rest of the run unaffected, which is why this doesn't fail the job.
-      - name: Fetch Conscrypt
-        continue-on-error: true
-        run: conscrypt/fetch-conscrypt.sh
 
       - name: Run Network Tests
         # No task here gates — all of them carry ignoreFailures, because everything here calls a
