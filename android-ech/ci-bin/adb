@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# android-emulator-runner sends these commands as soon as sys.boot_completed becomes 1. On
+# recent API 37 images the corresponding binder services can still be absent or restarting for
+# a few seconds. Retry only those runner-owned post-boot commands; every command used by the
+# test harness remains an ordinary adb invocation and has its own readiness/error handling.
+
+real_adb="${ANDROID_HOME:?ANDROID_HOME must point to the Android SDK}/platform-tools/adb"
+
+case " $* " in
+  *" shell input keyevent "* | *" shell settings put "*) ;;
+  *) exec "$real_adb" "$@" ;;
+esac
+
+deadline=$((SECONDS + ${ADB_STARTUP_RETRY_TIMEOUT_SECONDS:-120}))
+while true; do
+  "$real_adb" "$@"
+  status=$?
+  if ((status == 0)); then
+    exit 0
+  fi
+  if ((SECONDS >= deadline)); then
+    echo "ADB service did not become ready before the startup retry timeout" >&2
+    exit "$status"
+  fi
+  echo "ADB service is not ready; retrying in 2 seconds" >&2
+  sleep 2
+done

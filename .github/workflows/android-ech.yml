@@ -91,6 +91,12 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      # The runner checks only sys.boot_completed before sending a key event. API 37 can set
+      # that property before its input/settings binder services answer, so let the CI-only adb
+      # shim retry those runner commands until the service is actually ready.
+      - name: Make post-boot ADB commands resilient
+        run: echo "$GITHUB_WORKSPACE/android-ech/ci-bin" >> "$GITHUB_PATH"
+
       # ECH is applied by OkHttp's Android platform through android.net.ssl.EchConfigList, so
       # only the API 37 rows perform it; the rest assert what a device that cannot do ECH must
       # do instead. API 36+ also runs the deterministic Certificate Transparency fixture cases.
