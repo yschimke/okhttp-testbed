@@ -454,17 +454,14 @@ to a caller: SERVFAIL and NXDOMAIN have to be told apart, and a resolver answeri
 nothing to do with the name — has to be tellable from a name that does not exist.
 `HappyEyeballsTest` puts an unreachable address first and requires the connection to happen anyway.
 
-Two of those found something worth keeping. The first is the answer to that last question, and it
-is not the obvious one: `Dns.lookup` declares `UnknownHostException` and nothing else, so a
-resolver answering `429` arrives as exactly that, with a message that is the bare hostname and the
-`IOException("response: 429 …")` only as its cause. The type cannot be caught for, which is the
-platform's convention rather than an OkHttp quirk — `InetAddress.getAllByName` flattens every
-`getaddrinfo` error, retryable and not, into the same exception, and Android's `DnsResolver` is the
-one mainstream API that doesn't, by not being `InetAddress`-shaped at all. So the matrix's `errored`
-outcome — for resolvers that turn a DNSSEC validation failure into an HTTP `502` — is read off the
-cause chain rather than off a distinct exception. The second: every client in the Happy Eyeballs
-suite sets `Proxy.NO_PROXY`, because with a proxy in the way OkHttp connects to the proxy and the
-pinned addresses are never dialled: the suite would pass having tested nothing.
+Two of those found something worth keeping. The first is the answer to that last question: the
+resolver's HTTP status has to survive, but whether it is the top-level `IOException` or the cause of
+an `UnknownHostException` has changed as OkHttp's DNS implementation evolved. The suite asserts the
+useful contract — that `429` remains discoverable — without freezing that implementation detail.
+The matrix's `errored` outcome similarly walks the cause chain for resolvers that turn a DNSSEC
+validation failure into an HTTP `502`. The second: every client in the Happy Eyeballs suite sets
+`Proxy.NO_PROXY`, because with a proxy in the way OkHttp connects to the proxy and the pinned
+addresses are never dialled: the suite would pass having tested nothing.
 
 `DohServiceMetadataTest` asks the other half: what an `HTTPS` record carries, through `newCall`
 and `Dns.Record.ServiceMetadata`, since an ECH config list has nowhere else to come from. That

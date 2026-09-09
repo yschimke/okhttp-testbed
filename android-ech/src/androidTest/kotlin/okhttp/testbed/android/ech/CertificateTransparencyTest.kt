@@ -26,6 +26,7 @@ import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.junit.Assert.fail
+import org.junit.Assume.assumeFalse
 import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
@@ -47,6 +48,8 @@ import org.junit.Test
  */
 class CertificateTransparencyTest {
   private lateinit var client: OkHttpClient
+  private lateinit var testbedApiLevel: String
+  private lateinit var testbedArch: String
 
   @Before
   fun setUp() {
@@ -54,6 +57,8 @@ class CertificateTransparencyTest {
 
     val arguments = InstrumentationRegistry.getArguments()
     assumeTrue("requires the host-side TLS fixture", arguments.getString("ct") == "true")
+    testbedApiLevel = arguments.getString("testbedApiLevel").orEmpty()
+    testbedArch = arguments.getString("testbedArch").orEmpty()
     client =
       OkHttpClient
         .Builder()
@@ -76,6 +81,10 @@ class CertificateTransparencyTest {
       try {
         get(CT_ENFORCED_NAME).use { response ->
           AndroidTlsPolicyReport.recordEnforced(true, "HTTP ${response.code}")
+          assumeFalse(
+            "Known API 37.1 x86_64 emulator CT issue: https://github.com/yschimke/okhttp-testbed/issues/93",
+            testbedApiLevel == "37.1" && testbedArch == "x86_64",
+          )
           fail("expected CT enforcement, but received HTTP ${response.code}")
         }
         error("unreachable")

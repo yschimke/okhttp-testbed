@@ -5,7 +5,12 @@
 # a few seconds. Retry only those runner-owned post-boot commands; every command used by the
 # test harness remains an ordinary adb invocation and has its own readiness/error handling.
 
-real_adb="${ANDROID_HOME:?ANDROID_HOME must point to the Android SDK}/platform-tools/adb.real"
+# The wrapper is installed next to the real binary. Do not reconstruct this path from
+# ANDROID_HOME: AGP starts its device-provider subprocess from a Gradle daemon that may have
+# been created before setup-android exported that variable. The scheduled run then reported
+# BUILD SUCCESSFUL while every provider invocation failed before starting a test.
+wrapper_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+real_adb="$wrapper_dir/adb.real"
 
 case " $* " in
   *" shell input keyevent "* | *" shell settings put "*) ;;

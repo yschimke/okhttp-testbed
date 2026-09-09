@@ -39,10 +39,11 @@ import org.junit.jupiter.api.Test
  * failure that all looks alike, so a caller cannot tell "this name does not exist" from "the
  * resolver is having a bad day" and retries — or doesn't — for the wrong reason.
  *
- * The type is never the thing that tells them apart. `Dns.lookup` declares `UnknownHostException`
- * and nothing else, so every case below — a bad signature, an absent name, a resolver answering
- * `429` — arrives as that one class, and the message and the cause are the entire difference. What
- * each case asserts is which of the two is carrying it.
+ * NXDOMAIN and SERVFAIL use `UnknownHostException`. A transport failure is different: the current
+ * asynchronous DNS implementation surfaces the resolver's `IOException` directly even though
+ * the compatibility `Dns.lookup` signature documents `UnknownHostException`. The useful contract
+ * for an HTTP error is therefore that its status remains discoverable, wherever the implementation
+ * puts it in the exception chain.
  *
  * The names are chosen so that the *server* produces the failure rather than the test faking it:
  * `dnssec-failed.org` is a deliberately broken signature published for this purpose, and a random
@@ -90,29 +91,17 @@ class DnsFailureTest {
   }
 
   /**
-   * A resolver that answers with an HTTP error is a name that failed to resolve, as far as the
-   * type goes — and the reason survives only in the cause.
+   * A resolver that answers with an HTTP error preserves the reason for the failure.
    *
    * This is the finding worth having from this suite, and it is not the one you would guess. A
    * rate-limited or broken DoH endpoint is nothing to do with the *name* being looked up, but
-   * `Dns.lookup` declares `UnknownHostException` and nothing else, so `DnsOverHttps` wraps: the
-   * caller gets `UnknownHostException` whose message is the bare hostname, with the real
-   * `IOException("response: 429 …")` as its cause.
-   *
-   * That is the platform's convention rather than an OkHttp quirk — `InetAddress.getAllByName`
-   * flattens every `getaddrinfo` error, `EAI_AGAIN` (retry) and `EAI_NONAME` (do not) alike, into
-   * the one exception, and Java 18's `InetAddressResolver` SPI kept the same signature. Android's
-   * `DnsResolver` is the only mainstream API that does not flatten, and it buys that by not being
-   * `InetAddress`-shaped: an async callback delivering `DnsException(code, cause)`, plus a
-   * `rawQuery` that hands back the response bytes so the caller can read the rcode itself.
-   *
-   * So the hazard is real but it is not a type the caller can catch: code that catches
-   * `UnknownHostException` to decide whether to retry cannot tell "this name does not exist" from
-   * "the resolver is rate-limiting me" without walking `cause`. Asserted here as the cause chain,
-   * because that is the only place the difference exists.
+   * Older implementations wrapped the HTTP failure in `UnknownHostException`; the asynchronous
+   * DNS implementation used by 5.5.0 surfaces it directly. The wrapper class is not the property
+   * this test is about. A caller must be able to find `429` in either representation and tell a
+   * throttled resolver from a name that does not exist.
    */
   @Test
-  fun aResolverHttpErrorArrivesAsAnUnknownHost() {
+  fun aResolverHttpErrorPreservesTheStatus() {
     assumeAvailable(Endpoint.TESTSERVER_HOST)
 
     // A DoH URL that answers every query with 429. Nothing about the *name* being looked up is
@@ -133,15 +122,11 @@ class DnsFailureTest {
         e
       }
 
-    assertThat(failure, name = "a 429 from the resolver").isInstanceOf(UnknownHostException::class)
-
-    // The half that is worth keeping. `DnsOverHttps.throwBestFailure` calls `initCause` with the
-    // first HTTP failure, so this is where the status code lives; the surface message is the
-    // hostname and says nothing about HTTP at all. Asserted on the status rather than the whole
-    // string, which carries the reason phrase the server chose.
-    val cause = failure.cause
-    assertThat(cause, name = "the cause of a 429").isNotNull().isInstanceOf(IOException::class)
-    assertThat(cause?.message, name = "the cause's detail").isNotNull().contains("429")
+    val detail =
+      generateSequence<Throwable>(failure) { it.cause }
+        .mapNotNull(Throwable::message)
+        .joinToString("\n")
+    assertThat(detail, name = "a 429 from the resolver").contains("429")
   }
 
   /**

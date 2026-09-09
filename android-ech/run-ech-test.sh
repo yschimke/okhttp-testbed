@@ -110,6 +110,7 @@ fi
 wait_for_device_ready() {
   local deadline=$((SECONDS + ${ANDROID_READY_TIMEOUT_SECONDS:-300}))
   local property
+  local ready_samples=0
 
   adb wait-for-device
 
@@ -129,7 +130,14 @@ wait_for_device_ready() {
       # half-mounted device that fails with "Transport endpoint is not connected" — which
       # takes the instrumentation with it.
       adb shell test -d /sdcard/Android >/dev/null 2>&1; then
-      return 0
+      ready_samples=$((ready_samples + 1))
+      # API 37's package service can answer once and then restart while AGP is installing the
+      # APK. Require a short stable window instead of treating one successful probe as ready.
+      if ((ready_samples >= 3)); then
+        return 0
+      fi
+    else
+      ready_samples=0
     fi
     sleep 2
   done
@@ -176,6 +184,7 @@ wait_for_public_network() {
 # together; without that the second run would overwrite the first.
 results_dir="$repository_root/android-ech/build/outputs/androidTest-results/connected"
 additional_results_dir="$repository_root/android-ech/build/outputs/connected_android_test_additional_output"
+readonly no_results_status=86
 
 run_suite() {
   local class="$1"
@@ -186,6 +195,7 @@ run_suite() {
 
   rm -rf "$results_dir" "$additional_results_dir"
   mkdir -p "$(dirname "$report")"
+  wait_for_device_ready
   # `|| status=$?` rather than a bare call: this runs under `set -e`, and a failing suite whose
   # results were never moved aside is a failing suite nobody can read.
   "$repository_root/gradlew" -p "$repository_root" :android-ech:connectedDebugAndroidTest \
@@ -201,13 +211,21 @@ run_suite() {
   # The question is about test cases, not about the directory. An install that never ran still
   # leaves the results tree behind, empty — so gating this on the directory's absence meant it
   # never fired on the run it was written for.
-  if [ "$status" -ne 0 ] && ! grep -rqs '<testcase' "$results_dir"; then
+  if ! grep -rqs '<testcase' "$results_dir"; then
     echo "$class produced no results; retrying once." >&2
     status=0
+    wait_for_device_ready
     "$repository_root/gradlew" -p "$repository_root" :android-ech:connectedDebugAndroidTest \
       "${gradle_arguments[@]}" \
       -Pandroid.testInstrumentationRunnerArguments.class="okhttp.testbed.android.ech.$class" \
       "$@" || status=$?
+  fi
+
+  # Android Gradle Plugin can log a device-provider exception and still return success. Never
+  # let that turn an empty instrumentation attempt into a green job and a metadata-only artifact.
+  if ! grep -rqs '<testcase' "$results_dir"; then
+    echo "$class produced no results after retry; failing the job." >&2
+    status=$no_results_status
   fi
 
   if [ -d "$results_dir" ]; then
@@ -243,6 +261,9 @@ if [[ "$device_api_level" =~ ^[0-9]+$ ]] && ((device_api_level >= 37)) &&
   public_arguments+=("-Pandroid.testInstrumentationRunnerArguments.publicNetworkAvailable=false")
 fi
 run_suite PublicEncryptedClientHelloTest "${public_arguments[@]}" || public_status=$?
+if [ "$public_status" -eq "$no_results_status" ]; then
+  exit "$public_status"
+fi
 if [ "$public_status" -ne 0 ]; then
   echo "PublicEncryptedClientHelloTest failed; recorded, not fatal." >&2
 fi
@@ -251,11 +272,21 @@ fi
 # `no-sct.badssl.com` has repeatedly expired, and accepting its generic certificate failure as a
 # CT result creates a false positive. This suite gates because both the server and its CA are ours.
 run_suite CertificateTransparencyTest \
-  -Pandroid.testInstrumentationRunnerArguments.ct=true
+  -Pandroid.testInstrumentationRunnerArguments.ct=true \
+  -Pandroid.testInstrumentationRunnerArguments.testbedApiLevel="${ANDROID_TESTBED_API_LEVEL:-}" \
+  -Pandroid.testInstrumentationRunnerArguments.testbedArch="${ANDROID_TESTBED_ARCH:-}"
 
-# The fixture suite does gate: it runs against containers this repository starts, so a failure
-# is about OkHttp or about this repository, and there is nobody else to blame for it.
+# The fixture suite is critical but reporting: a completed assertion failure is the ECH result the
+# status page exists to publish, and turns that page red without making the emulator workflow look
+# unreliable. A run that records no testcases remains fatal, just as for the public suite.
+fixture_status=0
 run_suite EncryptedClientHelloTest \
   -Pandroid.testInstrumentationRunnerArguments.ech=true \
   -Pandroid.testInstrumentationRunnerArguments.dohPort=8053 \
-  -Pandroid.testInstrumentationRunnerArguments.caCertificate="$ca_certificate"
+  -Pandroid.testInstrumentationRunnerArguments.caCertificate="$ca_certificate" || fixture_status=$?
+if [ "$fixture_status" -eq "$no_results_status" ]; then
+  exit "$fixture_status"
+fi
+if [ "$fixture_status" -ne 0 ]; then
+  echo "EncryptedClientHelloTest failed; recorded as a critical finding, not fatal." >&2
+fi
