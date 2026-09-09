@@ -243,9 +243,17 @@ def parse_suite(
 
         if failure is not None or error is not None:
             detail = failure if failure is not None else error
-            status = "failed"
             message = detail.get("message") or ""
             trace = (detail.text or "").strip()
+            # AndroidJUnitRunner writes failed assumptions as <failure> rather than <skipped>.
+            # Normalize the JUnit 4 representation before applying known-issue classification;
+            # otherwise an unavailable public network turns the critical ECH topic red.
+            if "AssumptionViolatedException" in trace:
+                status = "skipped"
+                if not message:
+                    message = trace.splitlines()[0]
+            else:
+                status = "failed"
         elif skipped is not None:
             status = "skipped"
             message = skipped.get("message") or ""

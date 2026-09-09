@@ -28,7 +28,7 @@ class CollectResultsTest(unittest.TestCase):
             xml.write_text(
                 """<testsuite name="okhttp.testbed.android.ech.CertificateTransparencyTest">
                 <testcase name="unloggedCertificateIsRejectedWhenCtIsEnforced[emulator-5554 - 37]">
-                  <skipped message="Known API 37.1 x86_64 emulator CT issue" />
+                  <failure>org.junit.AssumptionViolatedException: Known API 37.1 x86_64 emulator CT issue</failure>
                 </testcase>
                 </testsuite>"""
             )
@@ -45,6 +45,29 @@ class CollectResultsTest(unittest.TestCase):
             self.assertEqual(1, suite["expected"])
             self.assertEqual(0, suite["skipped"])
             self.assertIn("issues/93", suite["cases"][0]["expectedReason"])
+
+    def test_android_assumption_failure_is_normalized_to_skip(self):
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            xml = pathlib.Path(temporary_dir) / "TEST-public.xml"
+            xml.write_text(
+                """<testsuite name="okhttp.testbed.android.ech.PublicEncryptedClientHelloTest">
+                <testcase name="cloudflareUsesEch[emulator-5554 - 37]">
+                  <failure>org.junit.AssumptionViolatedException: no outbound route</failure>
+                </testcase>
+                </testsuite>"""
+            )
+
+            suite = collect_results.parse_suite(
+                xml,
+                "connectedAndroidTest",
+                "android-ech",
+                "https://example.test/run",
+                "Android emulator API 37.1 · x86_64",
+                "API 37.1",
+            )
+
+            self.assertEqual(0, suite["failed"])
+            self.assertEqual(1, suite["skipped"])
 
     def test_other_ct_variants_are_not_suppressed(self):
         self.assertEqual(
