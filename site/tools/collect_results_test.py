@@ -57,6 +57,30 @@ class CollectResultsTest(unittest.TestCase):
             ),
         )
 
+    def test_android_fixture_ech_failure_is_critical_but_reporting(self):
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            xml = pathlib.Path(temporary_dir) / "TEST-ech.xml"
+            xml.write_text(
+                """<testsuite name="okhttp.testbed.android.ech.EncryptedClientHelloTest">
+                <testcase name="greenPathAcceptsEncryptedClientHello[emulator-5554 - 37]">
+                  <failure message="expected echAccepted true but was false" />
+                </testcase>
+                </testsuite>"""
+            )
+
+            suite = collect_results.parse_suite(
+                xml,
+                "connectedAndroidTest",
+                "android-ech",
+                "https://example.test/run",
+                "Android emulator API 37.1 · x86_64",
+                "API 37.1",
+            )
+
+            self.assertTrue(suite["reporting"])
+            self.assertEqual("critical", suite["severity"])
+            self.assertEqual("failed", collect_results.suite_status(suite))
+
 
 if __name__ == "__main__":
     unittest.main()

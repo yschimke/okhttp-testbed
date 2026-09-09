@@ -276,9 +276,17 @@ run_suite CertificateTransparencyTest \
   -Pandroid.testInstrumentationRunnerArguments.testbedApiLevel="${ANDROID_TESTBED_API_LEVEL:-}" \
   -Pandroid.testInstrumentationRunnerArguments.testbedArch="${ANDROID_TESTBED_ARCH:-}"
 
-# The fixture suite does gate: it runs against containers this repository starts, so a failure
-# is about OkHttp or about this repository, and there is nobody else to blame for it.
+# The fixture suite is critical but reporting: a completed assertion failure is the ECH result the
+# status page exists to publish, and turns that page red without making the emulator workflow look
+# unreliable. A run that records no testcases remains fatal, just as for the public suite.
+fixture_status=0
 run_suite EncryptedClientHelloTest \
   -Pandroid.testInstrumentationRunnerArguments.ech=true \
   -Pandroid.testInstrumentationRunnerArguments.dohPort=8053 \
-  -Pandroid.testInstrumentationRunnerArguments.caCertificate="$ca_certificate"
+  -Pandroid.testInstrumentationRunnerArguments.caCertificate="$ca_certificate" || fixture_status=$?
+if [ "$fixture_status" -eq "$no_results_status" ]; then
+  exit "$fixture_status"
+fi
+if [ "$fixture_status" -ne 0 ]; then
+  echo "EncryptedClientHelloTest failed; recorded as a critical finding, not fatal." >&2
+fi

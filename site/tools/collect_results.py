@@ -77,7 +77,7 @@ REPORTING_TASKS = {
 # runs under one task whatever it is testing, so the Android suite that calls tls-ech.dev and
 # defo.ie has no way to say it reports rather than gates except by being named here. Everything
 # else in the Android module runs against containers this repository starts.
-REPORTING_CLASSES = {"PublicEncryptedClientHelloTest"}
+REPORTING_CLASSES = {"EncryptedClientHelloTest", "PublicEncryptedClientHelloTest"}
 
 # What this repository is currently trying to find out. Everything here reports rather than
 # gates, exactly as before; severity decides only how loudly an *unexpected* failure is shown.
@@ -94,6 +94,7 @@ CRITICAL_SUITES = {
     "EchTest",
     "EchConscryptTest",
     "EchClientHelloTest",
+    "EncryptedClientHelloTest",
     "PublicEncryptedClientHelloTest",
     "PostQuantumTest",
 }
