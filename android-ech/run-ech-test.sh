@@ -110,6 +110,7 @@ fi
 wait_for_device_ready() {
   local deadline=$((SECONDS + ${ANDROID_READY_TIMEOUT_SECONDS:-300}))
   local property
+  local ready_samples=0
 
   adb wait-for-device
 
@@ -129,7 +130,14 @@ wait_for_device_ready() {
       # half-mounted device that fails with "Transport endpoint is not connected" — which
       # takes the instrumentation with it.
       adb shell test -d /sdcard/Android >/dev/null 2>&1; then
-      return 0
+      ready_samples=$((ready_samples + 1))
+      # API 37's package service can answer once and then restart while AGP is installing the
+      # APK. Require a short stable window instead of treating one successful probe as ready.
+      if ((ready_samples >= 3)); then
+        return 0
+      fi
+    else
+      ready_samples=0
     fi
     sleep 2
   done
@@ -187,6 +195,7 @@ run_suite() {
 
   rm -rf "$results_dir" "$additional_results_dir"
   mkdir -p "$(dirname "$report")"
+  wait_for_device_ready
   # `|| status=$?` rather than a bare call: this runs under `set -e`, and a failing suite whose
   # results were never moved aside is a failing suite nobody can read.
   "$repository_root/gradlew" -p "$repository_root" :android-ech:connectedDebugAndroidTest \
@@ -205,6 +214,7 @@ run_suite() {
   if ! grep -rqs '<testcase' "$results_dir"; then
     echo "$class produced no results; retrying once." >&2
     status=0
+    wait_for_device_ready
     "$repository_root/gradlew" -p "$repository_root" :android-ech:connectedDebugAndroidTest \
       "${gradle_arguments[@]}" \
       -Pandroid.testInstrumentationRunnerArguments.class="okhttp.testbed.android.ech.$class" \
