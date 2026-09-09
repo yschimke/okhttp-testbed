@@ -97,6 +97,12 @@ jobs:
       # See the matrix above, EncryptedClientHelloTest, and CertificateTransparencyTest.
       - name: Run the Android TLS suite against the fixture containers
         uses: reactivecircus/android-emulator-runner@v2.38.0
+        env:
+          # Instrumentation sees only an integer SDK level, while the tracked CT discrepancy is
+          # specific to the 37.1 x86_64 system image. Pass the matrix identity explicitly so the
+          # test can suppress exactly that known platform issue and nothing broader.
+          ANDROID_TESTBED_API_LEVEL: ${{ matrix.apiLevel }}
+          ANDROID_TESTBED_ARCH: ${{ matrix.arch }}
         with:
           api-level: ${{ matrix.apiLevel }}
           target: ${{ matrix.target }}

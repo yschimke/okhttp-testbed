@@ -176,6 +176,7 @@ wait_for_public_network() {
 # together; without that the second run would overwrite the first.
 results_dir="$repository_root/android-ech/build/outputs/androidTest-results/connected"
 additional_results_dir="$repository_root/android-ech/build/outputs/connected_android_test_additional_output"
+readonly no_results_status=86
 
 run_suite() {
   local class="$1"
@@ -201,13 +202,20 @@ run_suite() {
   # The question is about test cases, not about the directory. An install that never ran still
   # leaves the results tree behind, empty — so gating this on the directory's absence meant it
   # never fired on the run it was written for.
-  if [ "$status" -ne 0 ] && ! grep -rqs '<testcase' "$results_dir"; then
+  if ! grep -rqs '<testcase' "$results_dir"; then
     echo "$class produced no results; retrying once." >&2
     status=0
     "$repository_root/gradlew" -p "$repository_root" :android-ech:connectedDebugAndroidTest \
       "${gradle_arguments[@]}" \
       -Pandroid.testInstrumentationRunnerArguments.class="okhttp.testbed.android.ech.$class" \
       "$@" || status=$?
+  fi
+
+  # Android Gradle Plugin can log a device-provider exception and still return success. Never
+  # let that turn an empty instrumentation attempt into a green job and a metadata-only artifact.
+  if ! grep -rqs '<testcase' "$results_dir"; then
+    echo "$class produced no results after retry; failing the job." >&2
+    status=$no_results_status
   fi
 
   if [ -d "$results_dir" ]; then
@@ -243,6 +251,9 @@ if [[ "$device_api_level" =~ ^[0-9]+$ ]] && ((device_api_level >= 37)) &&
   public_arguments+=("-Pandroid.testInstrumentationRunnerArguments.publicNetworkAvailable=false")
 fi
 run_suite PublicEncryptedClientHelloTest "${public_arguments[@]}" || public_status=$?
+if [ "$public_status" -eq "$no_results_status" ]; then
+  exit "$public_status"
+fi
 if [ "$public_status" -ne 0 ]; then
   echo "PublicEncryptedClientHelloTest failed; recorded, not fatal." >&2
 fi
@@ -251,7 +262,9 @@ fi
 # `no-sct.badssl.com` has repeatedly expired, and accepting its generic certificate failure as a
 # CT result creates a false positive. This suite gates because both the server and its CA are ours.
 run_suite CertificateTransparencyTest \
-  -Pandroid.testInstrumentationRunnerArguments.ct=true
+  -Pandroid.testInstrumentationRunnerArguments.ct=true \
+  -Pandroid.testInstrumentationRunnerArguments.testbedApiLevel="${ANDROID_TESTBED_API_LEVEL:-}" \
+  -Pandroid.testInstrumentationRunnerArguments.testbedArch="${ANDROID_TESTBED_ARCH:-}"
 
 # The fixture suite does gate: it runs against containers this repository starts, so a failure
 # is about OkHttp or about this repository, and there is nobody else to blame for it.

@@ -192,6 +192,17 @@ def expected_reason(
                 "Http2Writer.flush's blocking write, which pins the virtual thread's carrier. "
                 "JEP 491 removes this monitor-based pinning from JDK 24."
             )
+    if (
+        suite_name == "CertificateTransparencyTest"
+        and case_name == "unloggedCertificateIsRejectedWhenCtIsEnforced"
+        and variant == "API 37.1"
+        and "x86_64" in platform
+    ):
+        return (
+            "The Android 37.1 x86_64 emulator can accept an unlogged certificate despite an "
+            "explicit Certificate Transparency opt-in. Tracked as "
+            "https://github.com/yschimke/okhttp-testbed/issues/93."
+        )
     return EXPECTED_FAILURES.get(suite_name, {}).get(case_name, "")
 
 
@@ -247,7 +258,7 @@ def parse_suite(
         case_name = normalise_case(raw_name)
         reason = (
             expected_reason(simple_name, case_name, platform, variant)
-            if status == "failed"
+            if status in ("failed", "skipped")
             else ""
         )
         if reason:
@@ -479,7 +490,12 @@ def parse_artifact(directory: pathlib.Path) -> dict | None:
         except ElementTree.ParseError as e:
             print(f"skipping unreadable {xml}: {e}", file=sys.stderr)
 
-    if not suites and not metadata:
+    if not suites:
+        if metadata:
+            print(
+                f"skipping metadata-only artifact {directory} from {workflow}: no JUnit XML suites",
+                file=sys.stderr,
+            )
         return None
 
     # Fall back to the artifact name when a run predates run-metadata.json.
