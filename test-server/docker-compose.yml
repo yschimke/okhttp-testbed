@@ -43,7 +43,7 @@ services:
   # server. Caddy speaks h2 and h2c out of the box and h3 over UDP, which is what makes it
   # the Alt-Svc fixture for issue #12 as well.
   caddy:
-    image: caddy:2.11.4-alpine
+    image: caddy:2.11.6-alpine
     restart: unless-stopped
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
