@@ -16,6 +16,27 @@
         "org.junit.vintage:{/,}**"
       ],
       "allowedVersions": "<6"
+    },
+    {
+      "description": "Move the Docker Compose image and JVM container-test pin together; checkImagePins rejects drift.",
+      "matchPackageNames": [
+        "ghcr.io/mccutchen/go-httpbin"
+      ],
+      "groupName": "go-httpbin"
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "The HTTPBin version catalog entry feeds container tests and must move with the Docker Compose image.",
+      "managerFilePatterns": [
+        "/^gradle/libs\\.versions\\.toml$/"
+      ],
+      "matchStrings": [
+        "gohttpbin = \"(?<currentValue>[^\"\\s]+)\""
+      ],
+      "depNameTemplate": "ghcr.io/mccutchen/go-httpbin",
+      "datasourceTemplate": "docker"
     }
   ]
 }
