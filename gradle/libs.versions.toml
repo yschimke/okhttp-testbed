@@ -2,7 +2,7 @@
 agp = "9.4.1"
 androidx-test-runner = "1.7.0"
 assertk = "0.28.1"
-conscrypt = "2.7.0"
+conscrypt = "2.8.0"
 junit4 = "4.13.2"
 junit-platform = "1.14.4"
 kotlin = "2.4.21"
