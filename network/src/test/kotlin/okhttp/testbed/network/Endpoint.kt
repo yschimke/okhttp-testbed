@@ -82,6 +82,18 @@ enum class Endpoint(
     probe = Probe.Https("https://cloudflare-ech.com/cdn-cgi/trace"),
   ),
 
+  FOTMOB_WEB(
+    server = "www.fotmob.com",
+    operator = "FotMob",
+    probe = Probe.Https("https://www.fotmob.com/"),
+  ),
+
+  FOTMOB_API(
+    server = "api.fotmob.com",
+    operator = "FotMob",
+    probe = Probe.Https("https://api.fotmob.com/"),
+  ),
+
   TLS_ECH_DEV(
     server = "tls-ech.dev",
     operator = "Dennis Jackson",
