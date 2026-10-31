@@ -41,12 +41,14 @@ fun compareVersions(
 val echTestPattern = "EchTest"
 val echConscryptTestPattern = "EchConscryptTest"
 val echClientHelloTestPattern = "EchClientHelloTest"
+val echConscryptPolicyTestPattern = "ConscryptEchPolicyTest"
 // The suites and helpers that name `Dns.Record` or `includeServiceMetadata`, neither of which
 // exists below 5.5.0.
 val serviceMetadataPatterns = listOf("DohServiceMetadataTest", "HttpsRecordTest", "DnsRecords")
 
 sourceSets {
   test {
+    resources.srcDir("../ech-fixture/src/main/resources")
     kotlin {
       // EchTest joined this list when it became parameterised over the platforms and therefore
       // names Conscrypt types. Conscrypt is a normal Maven dependency now; only an OkHttp version
@@ -56,6 +58,7 @@ sourceSets {
           "**/$echTestPattern.kt",
           "**/$echConscryptTestPattern.kt",
           "**/$echClientHelloTestPattern.kt",
+          "**/$echConscryptPolicyTestPattern.kt",
           "**/ConscryptEch.kt",
           "**/EchConscryptPlatform.kt",
         )
@@ -182,7 +185,11 @@ val echConscryptTest =
     // EchClientHelloTest runs here rather than under networkTest despite calling nobody: it
     // answers the same question as the rest of this task and needs the same Conscrypt, and
     // reading a "the servers agree" result next to a "the bytes are right" one is the point.
-    include("**/$echConscryptTestPattern.class", "**/$echClientHelloTestPattern.class")
+    include(
+      "**/$echConscryptTestPattern.class",
+      "**/$echClientHelloTestPattern.class",
+      "**/$echConscryptPolicyTestPattern.class",
+    )
 
     reportEndpointsTo("echConscryptTest")
     enabled = supportsEch
@@ -207,6 +214,7 @@ dependencies {
   testImplementation("com.squareup.okhttp3:okhttp-dnsoverhttps:$okhttpVersion")
 
   testImplementation(libs.conscrypt.openjdk.uber)
+  testImplementation(libs.testcontainers)
 
   testImplementation(libs.junit.jupiter.api)
   testImplementation(libs.junit.jupiter.params)

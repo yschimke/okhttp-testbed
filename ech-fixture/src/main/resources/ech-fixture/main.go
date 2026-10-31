@@ -37,15 +37,17 @@ var fixtureCAPEM []byte
 var fixtureCAKeyPEM []byte
 
 const (
-	greenName          = "green.secret.test"
-	greenPublicName    = "green.public.test"
-	retryName          = "retry.secret.test"
-	retryPublicName    = "retry.public.test"
-	disabledName       = "disabled.secret.test"
-	disabledPublicName = "disabled.public.test"
-	ctEnforcedName     = "ct-enforced.test"
-	ctOptOutName       = "ct-opt-out.test"
-	dohName            = "doh.test"
+	greenName           = "green.secret.test"
+	greenPublicName     = "green.public.test"
+	retryName           = "retry.secret.test"
+	retryPublicName     = "retry.public.test"
+	disabledName        = "disabled.secret.test"
+	disabledPublicName  = "disabled.public.test"
+	issue1561Name       = "issue1561.secret.test"
+	issue1561PublicName = "issue1561.public.test"
+	ctEnforcedName      = "ct-enforced.test"
+	ctOptOutName        = "ct-opt-out.test"
+	dohName             = "doh.test"
 )
 
 type echKey struct {
@@ -84,7 +86,10 @@ func runTarget() {
 		ctOptOutName,
 	)
 	dohCertPEM, dohKeyPEM := newLeaf(caCert, caKey, dohName)
+	issue1561CertPEM, issue1561KeyPEM := newLeaf(caCert, caKey, issue1561PublicName)
 	targetCertificate, err := tls.X509KeyPair(targetCertPEM, targetKeyPEM)
+	must(err)
+	issue1561Certificate, err := tls.X509KeyPair(issue1561CertPEM, issue1561KeyPEM)
 	must(err)
 
 	greenKey := newECHKey(1, greenPublicName, true)
@@ -92,11 +97,14 @@ func runTarget() {
 	retryKey := newECHKey(3, retryPublicName, true)
 	disabledStaleKey := newECHKey(4, disabledPublicName, false)
 	disabledKey := newECHKey(5, disabledPublicName, false)
+	issue1561StaleKey := newECHKey(6, issue1561PublicName, false)
+	issue1561Key := newECHKey(7, issue1561PublicName, false)
 
 	metadata := strings.Join([]string{
 		"ECH_GREEN_CONFIG_LIST=" + base64.StdEncoding.EncodeToString(configList(greenKey)),
 		"ECH_RETRY_STALE_CONFIG_LIST=" + base64.StdEncoding.EncodeToString(configList(retryStaleKey)),
 		"ECH_DISABLED_STALE_CONFIG_LIST=" + base64.StdEncoding.EncodeToString(configList(disabledStaleKey)),
+		"ECH_ISSUE1561_STALE_CONFIG_LIST=" + base64.StdEncoding.EncodeToString(configList(issue1561StaleKey)),
 		"DOH_CERT=" + base64.StdEncoding.EncodeToString(dohCertPEM),
 		"DOH_KEY=" + base64.StdEncoding.EncodeToString(dohKeyPEM),
 		"CA_CERT=" + base64.StdEncoding.EncodeToString(caPEM),
@@ -121,6 +129,8 @@ func runTarget() {
 				key = retryKey
 			case disabledPublicName:
 				key = disabledKey
+			case issue1561PublicName:
+				key = issue1561Key
 			default:
 				return []tls.EncryptedClientHelloKey{}, nil
 			}
@@ -129,6 +139,12 @@ func runTarget() {
 				PrivateKey:  key.private,
 				SendAsRetry: key.retryable,
 			}}, nil
+		},
+		GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			if hello.ServerName == issue1561PublicName {
+				return &issue1561Certificate, nil
+			}
+			return &targetCertificate, nil
 		},
 	}
 	mux := http.NewServeMux()
@@ -144,9 +160,10 @@ func runDoH() {
 	certPEM := decodeEnvironment("DOH_CERT")
 	keyPEM := decodeEnvironment("DOH_KEY")
 	echConfigs := map[string][]byte{
-		greenName:    decodeEnvironment("ECH_GREEN_CONFIG_LIST"),
-		retryName:    decodeEnvironment("ECH_RETRY_STALE_CONFIG_LIST"),
-		disabledName: decodeEnvironment("ECH_DISABLED_STALE_CONFIG_LIST"),
+		greenName:     decodeEnvironment("ECH_GREEN_CONFIG_LIST"),
+		retryName:     decodeEnvironment("ECH_RETRY_STALE_CONFIG_LIST"),
+		disabledName:  decodeEnvironment("ECH_DISABLED_STALE_CONFIG_LIST"),
+		issue1561Name: decodeEnvironment("ECH_ISSUE1561_STALE_CONFIG_LIST"),
 	}
 	targetPort, err := strconv.Atoi(requiredEnvironment("TARGET_PORT"))
 	must(err)
