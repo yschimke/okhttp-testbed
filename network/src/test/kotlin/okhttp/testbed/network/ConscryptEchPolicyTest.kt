@@ -127,11 +127,10 @@ class ConscryptEchPolicyTest {
         .withFileFromClasspath("main.go", "ech-fixture/main.go")
         .withFileFromClasspath("ct-fixture-ca.pem", "ech-fixture/ct-fixture-ca.pem")
         .withFileFromClasspath("ct-fixture-ca-key.pem", "ech-fixture/ct-fixture-ca-key.pem")
-    val origin =
-      GenericContainer<Nothing>(image)
-        .withCommand("target")
-        .withExposedPorts(CONTROL_PORT, TLS_PORT)
-        .waitingFor(Wait.forHttp("/health").forPort(CONTROL_PORT))
+    val origin = GenericContainer<Nothing>(image)
+    origin.withCommand("target")
+    origin.withExposedPorts(CONTROL_PORT, TLS_PORT)
+    origin.waitingFor(Wait.forHttp("/health").forPort(CONTROL_PORT))
     origin.start()
     try {
       block(origin)
