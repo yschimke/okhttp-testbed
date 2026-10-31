@@ -171,12 +171,17 @@ class ConscryptEchPolicyTest {
           while (networkOut.hasRemaining()) channel.write(networkOut)
         }
         "NEED_UNWRAP" -> {
-          if (channel.read(networkIn) == -1) throw SSLHandshakeException("peer closed during handshake")
           networkIn.flip()
           val result = engine.unwrap(networkIn, empty)
           networkIn.compact()
-          if (result.status == javax.net.ssl.SSLEngineResult.Status.CLOSED) {
-            throw SSLHandshakeException("peer closed during handshake")
+          when (result.status) {
+            javax.net.ssl.SSLEngineResult.Status.BUFFER_UNDERFLOW -> {
+              if (channel.read(networkIn) == -1) throw SSLHandshakeException("peer closed during handshake")
+            }
+            javax.net.ssl.SSLEngineResult.Status.CLOSED -> {
+              throw SSLHandshakeException("peer closed during handshake")
+            }
+            else -> Unit
           }
         }
         "NEED_UNWRAP_AGAIN" -> {
