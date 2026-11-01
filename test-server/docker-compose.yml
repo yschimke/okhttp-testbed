@@ -34,7 +34,7 @@ services:
   # are rate-limited and intermittently down.
   httpbin:
     # Tag must match `gohttpbin` in gradle/libs.versions.toml; checkImagePins enforces it.
-    image: ghcr.io/mccutchen/go-httpbin:2.25.0
+    image: ghcr.io/mccutchen/go-httpbin:2.26.0
     restart: unless-stopped
     ports:
       - "${HTTPBIN_PORT:-8090}:8080"
