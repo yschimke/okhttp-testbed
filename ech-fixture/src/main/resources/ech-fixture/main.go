@@ -43,7 +43,6 @@ const (
 	retryPublicName     = "retry.public.test"
 	disabledName        = "disabled.secret.test"
 	disabledPublicName  = "disabled.public.test"
-	issue1561Name       = "issue1561.secret.test"
 	issue1561PublicName = "issue1561.public.test"
 	ctEnforcedName      = "ct-enforced.test"
 	ctOptOutName        = "ct-opt-out.test"
@@ -163,7 +162,6 @@ func runDoH() {
 		greenName:     decodeEnvironment("ECH_GREEN_CONFIG_LIST"),
 		retryName:     decodeEnvironment("ECH_RETRY_STALE_CONFIG_LIST"),
 		disabledName:  decodeEnvironment("ECH_DISABLED_STALE_CONFIG_LIST"),
-		issue1561Name: decodeEnvironment("ECH_ISSUE1561_STALE_CONFIG_LIST"),
 	}
 	targetPort, err := strconv.Atoi(requiredEnvironment("TARGET_PORT"))
 	must(err)
