@@ -93,6 +93,8 @@ class EchConscryptTest {
   @Test
   @RequiresEndpoint(Endpoint.CLOUDFLARE_ECH)
   fun cloudflareAcceptsAnEncryptedClientHello() {
+    // Also exercises that the configured ECH policy reaches Conscrypt's engine socket; see
+    // https://github.com/google/conscrypt/issues/1562.
     val body = get("https://cloudflare-ech.com/cdn-cgi/trace")
     record("cloudflareAcceptsAnEncryptedClientHello", "cloudflare-ech.com")
 
@@ -122,6 +124,24 @@ class EchConscryptTest {
 
     assertThat(socketFactory.encryptedHostnames).contains("defo.ie")
     assertThat(body).contains("SSL_ECH_STATUS: success")
+  }
+
+  /**
+   * FotMob doesn't expose a response marker for ECH. These checks are conditional on the
+   * hostname publishing an ECHConfigList: if it does, we verify OkHttp discovers that HTTPS
+   * record and Conscrypt receives the config before the TLS connection is made. The response
+   * itself is only a reachability check and does not claim that the server accepted ECH.
+   */
+  @Test
+  @RequiresEndpoint(Endpoint.FOTMOB_WEB)
+  fun fotmobWebIsReachableWhenItAdvertisesEch() {
+    checkFotmobEch("www.fotmob.com", "https://www.fotmob.com/")
+  }
+
+  @Test
+  @RequiresEndpoint(Endpoint.FOTMOB_API)
+  fun fotmobApiIsReachableWhenItAdvertisesEch() {
+    checkFotmobEch("api.fotmob.com", "https://api.fotmob.com/")
   }
 
   /**
@@ -155,6 +175,19 @@ class EchConscryptTest {
 
   private fun get(url: String): String =
     client.newCall(Request(url.toHttpUrl())).execute().use { it.body.string() }
+
+  private fun checkFotmobEch(
+    hostname: String,
+    url: String,
+  ) {
+    get(url)
+    record("${hostname}IsReachableWhenItAdvertisesEch", hostname)
+
+    // FotMob can change DNS independently of this testbed. Skip the ECH assertion if it no
+    // longer publishes a config; the endpoint probe and request above still establish reachability.
+    assumeTrue(dns[hostname] != null) { "$hostname does not publish an ECHConfigList" }
+    assertThat(socketFactory.encryptedHostnames).contains(hostname)
+  }
 
   private fun record(
     case: String,
