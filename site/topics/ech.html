@@ -140,7 +140,7 @@
     fetching from each public server that speaks ECH. It runs on every platform rather than only
     where ECH works — the JVM cannot do ECH today, and that must not stop it reaching servers that
     can. Each case also requires the server to say ECH was <em>not</em> used
-    (<code>sni=plaintext</code>, <code>SSL_ECH_STATUS: not attempted</code>, "You are not using
+    (<code>sni=plaintext</code>, <code>SSL_ECH_STATUS: NOT_TRIED</code>, "You are not using
     ECH"), so a run where ECH quietly started working fails rather than passing while measuring
     something else.
   </p>
@@ -307,7 +307,7 @@
           <td class="mono"><a href="https://defo.ie/ech-check.php">defo.ie/ech-check.php</a></td>
           <td><a href="https://defo.ie/">DEfO</a> (OpenSSL ECH)</td>
           <td>A second, independent implementation — an OpenSSL-based server rather than Cloudflare's stack.</td>
-          <td class="mono">SSL_ECH_STATUS: success</td>
+          <td class="mono">SSL_ECH_STATUS: SUCCESS</td>
         </tr>
       </tbody>
     </table>

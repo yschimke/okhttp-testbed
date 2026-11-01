@@ -22,7 +22,7 @@ const PUBLIC_ROWS = [
     EchConscryptTest: 'tlsEchDevAcceptsAnEncryptedClientHello',
     PublicEncryptedClientHelloTest: 'echIsAcceptedOnTlsEchDev',
   }],
-  ['defo.ie', 'SSL_ECH_STATUS: success', {
+  ['defo.ie', 'SSL_ECH_STATUS: SUCCESS', {
     EchTest: 'echIsAcceptedOnDefoIe',
     EchConscryptTest: 'defoIeAcceptsAnEncryptedClientHello',
     PublicEncryptedClientHelloTest: 'echIsAcceptedOnDefoIe',

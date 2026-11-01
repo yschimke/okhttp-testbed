@@ -123,7 +123,7 @@ class EchConscryptTest {
     record("defoIeAcceptsAnEncryptedClientHello", "defo.ie")
 
     assertThat(socketFactory.encryptedHostnames).contains("defo.ie")
-    assertThat(body).contains("SSL_ECH_STATUS: success")
+    assertThat(body).contains("SSL_ECH_STATUS: SUCCESS")
   }
 
   /**

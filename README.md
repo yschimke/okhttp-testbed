@@ -294,7 +294,7 @@ configuration, no DoH, nothing arranged — fetches from each public server that
 each has to serve it. It runs on every platform rather than only where ECH works, which is the
 point: the JVM cannot do ECH today and that must not stop it talking to servers that can. Each
 case also requires the server to *say* ECH was not used — Cloudflare's `sni=plaintext`, DEfO's
-`SSL_ECH_STATUS: not attempted`, `tls-ech.dev`'s "You are not using ECH" — because a success
+`SSL_ECH_STATUS: NOT_TRIED`, `tls-ech.dev`'s "You are not using ECH" — because a success
 where ECH had quietly started working would pass while testing something else entirely.
 
 The local half is the offer itself. `test-server`'s `/tls` now reports the ClientHello's
