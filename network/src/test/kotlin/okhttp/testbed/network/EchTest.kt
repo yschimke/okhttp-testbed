@@ -239,7 +239,7 @@ class EchTest {
       assertThat(call.routeList.routes.single().echConfigList).isNotNull()
 
       val body = response.body.string()
-      assertThat(body).contains("SSL_ECH_STATUS: success")
+      assertThat(body).contains("SSL_ECH_STATUS: SUCCESS")
     }
   }
 

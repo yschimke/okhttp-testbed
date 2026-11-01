@@ -88,7 +88,7 @@ class EchGreaseTest {
     DEFO_IE(
       endpoint = Endpoint.DEFO_IE,
       url = "https://defo.ie/ech-check.php",
-      notUsed = "SSL_ECH_STATUS: not attempted",
+      notUsed = "SSL_ECH_STATUS: NOT_TRIED",
     ),
   }
 }
