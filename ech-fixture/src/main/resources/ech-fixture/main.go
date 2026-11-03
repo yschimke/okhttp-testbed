@@ -220,11 +220,17 @@ func dnsResponse(query []byte, echConfigs map[string][]byte, targetPort int) ([]
 	case 1: // A
 		rdata = []byte{127, 0, 0, 1}
 	case 65: // HTTPS
-		if record, ok := svcParamFixture(questionName, targetPort); ok {
+		// A client reaching the origin on a port other than 443 asks for the HTTPS record at
+		// `_<port>._https.<name>` (RFC 9460 §2.3), and the origin is on 8443. Answer that name
+		// with the same record as the bare one. Without this the query fails, the client goes
+		// ahead with just the A record, and the handshake carries only GREASE ECH with the
+		// real name in cleartext SNI — which reads as the platform ignoring the config list.
+		serviceName := stripAttrleafPort(questionName)
+		if record, ok := svcParamFixture(serviceName, targetPort); ok {
 			rdata = record
 			break
 		}
-		echConfigList, ok := echConfigs[questionName]
+		echConfigList, ok := echConfigs[serviceName]
 		if !ok {
 			return nil, fmt.Errorf("no ECH fixture for %q", questionName)
 		}
@@ -276,6 +282,18 @@ func dnsQuestion(query []byte) (int, string, error) {
 		return 0, "", fmt.Errorf("short DNS question")
 	}
 	return position + 4, strings.ToLower(strings.Join(labels, ".")), nil
+}
+
+// Returns name without a leading `_<port>._https.` Attrleaf prefix, or name unchanged.
+func stripAttrleafPort(name string) string {
+	labels := strings.SplitN(name, ".", 3)
+	if len(labels) < 3 || labels[1] != "_https" || len(labels[0]) < 2 || labels[0][0] != '_' {
+		return name
+	}
+	if _, err := strconv.ParseUint(labels[0][1:], 10, 16); err != nil {
+		return name
+	}
+	return labels[2]
 }
 
 func httpsRecord(echConfigList []byte, targetPort int) []byte {
