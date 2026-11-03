@@ -481,7 +481,9 @@ Two containers stand behind it, built from one small Go program in `ech-fixture`
   every request with the two facts the test is about — whether the handshake it accepted
   used ECH, and which name it was for;
 - a DoH resolver, configured from the origin's keys, answering HTTPS records that carry an
-  ECH config list, the origin's port, and an IPv4 hint.
+  ECH config list, the origin's port, and an IPv4 hint. The origin is on 8443, so a client
+  asks for the record at `_8443._https.<name>` (RFC 9460 §2.3); the resolver answers that
+  name and the bare one alike.
 
 Three hostnames give three outcomes. `green.secret.test` is published with the config the
 origin holds, so the first handshake is accepted. `retry.secret.test` is published with a
